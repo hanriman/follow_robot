@@ -1,0 +1,73 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 78
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /LaserScan1
+        - /Image1
+      Splitter Ratio: 0.5
+  - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Arena Grid
+      Plane: XY
+      Plane Cell Count: 20
+      Cell Size: 0.5
+      Color: 80; 80; 90
+      Value: true
+    - Class: rviz_default_plugins/RobotModel
+      Name: AckBot URDF
+      Description Topic:
+        Value: /robot_description
+      Visual Enabled: true
+      Collision Enabled: false
+      Value: true
+    - Class: rviz_default_plugins/LaserScan
+      Name: 2D LiDAR (360°)
+      Topic:
+        Depth: 5
+        Value: /scan
+      Color Transformer: AxisColor
+      Axis: Z
+      Size (m): 0.04
+      Style: Points
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Name: TF Tree
+      Show Axes: true
+      Show Arrows: false
+      Show Names: false
+      Value: true
+    - Class: rviz_default_plugins/Odometry
+      Name: Odometry Trajectory
+      Topic:
+        Depth: 5
+        Value: /odom
+      Shape: Arrow
+      Keep: 50
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Name: Front RGB Camera
+      Topic:
+        Depth: 5
+        Value: /camera/image_raw
+      Value: true
+  Global Options:
+    Background Color: 30; 30; 35
+    Fixed Frame: odom
+    Frame Rate: 30
+Views:
+  Current View:
+    Class: rviz_default_plugins/Orbit
+    Distance: 5.5
+    Pitch: 0.75
+    Yaw: 3.14
+    Target Frame: base_footprint

@@ -1,0 +1,31 @@
+# Python virtual environment & cache
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# ROS 2 build directories
+ros_ws/build/
+ros_ws/install/
+ros_ws/log/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Outputs & Model Checkpoints
+# Keep directory structure via .gitkeep, ignore heavy weights & event files
+data/*
+outputs/experiments/*
+outputs/reports/*
+
+# Temporary / Scratch
+scratch/*

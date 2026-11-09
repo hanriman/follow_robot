@@ -1,0 +1,141 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Physical constants from spec.txt -->
+  <xacro:property name="chassis_length" value="0.30"/>
+  <xacro:property name="chassis_width" value="0.20"/>
+  <xacro:property name="deck_thickness" value="0.005"/>
+  <xacro:property name="deck_spacing" value="0.10"/>
+  <xacro:property name="chassis_mass" value="5.0"/>
+
+  <!-- Macro for inertias -->
+  <xacro:macro name="box_inertia" params="m x y z">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${(m/12) * (y*y + z*z)}" ixy="0.0" ixz="0.0"
+               iyy="${(m/12) * (x*x + z*z)}" iyz="0.0"
+               izz="${(m/12) * (x*x + y*y)}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- base_footprint at ground level -->
+  <link name="base_footprint"/>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <!-- Wheel radius = 0.06m -> base_link (Level 1) is at Z = 0.06m -->
+    <origin xyz="0 0 0.06" rpy="0 0 0"/>
+  </joint>
+
+  <!-- base_link = Level 1 deck (Base plate, Z = 6cm) -->
+  <link name="base_link">
+    <!-- Level 1 Visual Plate -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${deck_thickness}"/>
+      </geometry>
+      <material name="dark_gray">
+        <color rgba="0.25 0.25 0.28 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.10" rpy="0 0 0"/>
+      <geometry>
+        <!-- Full bounding volume of 3 decks -->
+        <box size="${chassis_length} ${chassis_width} 0.20"/>
+      </geometry>
+    </collision>
+    <xacro:box_inertia m="${chassis_mass}" x="${chassis_length}" y="${chassis_width}" z="0.20"/>
+  </link>
+
+  <!-- Level 2 deck (Middle plate, Z = 16cm -> origin at +0.10m above Level 1) -->
+  <link name="deck_level_2">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${deck_thickness}"/>
+      </geometry>
+      <material name="metallic_aluminum">
+        <color rgba="0.65 0.68 0.72 1.0"/>
+      </material>
+    </visual>
+    <!-- Standoff pillars from Level 1 to Level 2 -->
+    <visual>
+      <origin xyz="0.13 0.08 -0.05" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.005" length="0.10"/></geometry>
+      <material name="dark_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="0.13 -0.08 -0.05" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.005" length="0.10"/></geometry>
+      <material name="dark_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.13 0.08 -0.05" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.005" length="0.10"/></geometry>
+      <material name="dark_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.13 -0.08 -0.05" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.005" length="0.10"/></geometry>
+      <material name="dark_gray"/>
+    </visual>
+    <inertial>
+      <mass value="0.5"/>
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+    </inertial>
+  </link>
+
+  <joint name="deck_level_2_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="deck_level_2"/>
+    <origin xyz="0 0 ${deck_spacing}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Level 3 deck (Top plate, Z = 26cm -> origin at +0.20m above Level 1) -->
+  <link name="deck_level_3">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${deck_thickness}"/>
+      </geometry>
+      <material name="ackbot_blue">
+        <color rgba="0.15 0.45 0.85 1.0"/>
+      </material>
+    </visual>
+    <!-- Standoff pillars from Level 2 to Level 3 -->
+    <visual>
+      <origin xyz="0.13 0.08 -0.05" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.005" length="0.10"/></geometry>
+      <material name="dark_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="0.13 -0.08 -0.05" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.005" length="0.10"/></geometry>
+      <material name="dark_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.13 0.08 -0.05" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.005" length="0.10"/></geometry>
+      <material name="dark_gray"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.13 -0.08 -0.05" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.005" length="0.10"/></geometry>
+      <material name="dark_gray"/>
+    </visual>
+    <inertial>
+      <mass value="0.5"/>
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+    </inertial>
+  </link>
+
+  <joint name="deck_level_3_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="deck_level_3"/>
+    <origin xyz="0 0 ${deck_spacing * 2}" rpy="0 0 0"/>
+  </joint>
+
+</robot>

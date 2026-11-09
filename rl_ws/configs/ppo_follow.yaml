@@ -1,0 +1,31 @@
+# PPO Hyperparameters for AckBot Target Following
+algorithm:
+  total_timesteps: 400000       # Total environment steps across curriculum (~20-25 mins on M4 Pro)
+  n_steps: 2048                 # Horizon length per rollout iteration
+  batch_size: 64                # Minibatch size
+  n_epochs: 10                  # PPO update epochs per iteration
+  learning_rate: 0.0003         # Adam optimizer learning rate
+  gamma: 0.99                   # Discount factor
+  gae_lambda: 0.95              # GAE factor
+  clip_range: 0.2               # PPO surrogate clip epsilon
+  clip_range_vf: 0.2            # Value function clip epsilon
+  ent_coef: 0.01                # Entropy bonus coefficient (encourages exploration)
+  vf_coef: 0.5                  # Value function loss coefficient
+  max_grad_norm: 0.5            # Gradient clipping norm
+  target_kl: 0.03               # Target KL divergence threshold for early stopping
+
+curriculum:
+  enabled: true
+  min_episodes_per_stage: 20
+  stage_thresholds:
+    1: { min_return: 380.0 }
+    2: { min_return: 320.0 }
+    3: { min_return: 300.0 }
+  replay_previous_ratio: 0.30
+
+evaluation:
+  eval_freq: 20000              # Evaluate every 20k steps
+  n_eval_episodes: 3            # Number of deterministic test episodes per stage (12 total)
+  save_best_only: false
+
+device: "auto"                  # auto, mps, cpu

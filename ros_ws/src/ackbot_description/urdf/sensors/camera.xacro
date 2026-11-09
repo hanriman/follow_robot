@@ -1,0 +1,72 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Camera Link (Front bumper: X = +0.15m, Z = 0.25m from ground -> +0.19m from base_link) -->
+  <link name="camera_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <!-- RealSense form factor: 90mm x 25mm x 25mm -->
+        <box size="0.025 0.090 0.025"/>
+      </geometry>
+      <material name="silver">
+        <color rgba="0.75 0.75 0.80 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.025 0.090 0.025"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.072"/>
+      <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
+    </inertial>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <!-- X = +0.15m (front bumper), Z = 0.19m (+0.06m base = 0.25m ground) -->
+    <origin xyz="0.15 0 0.19" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Standard ROS Optical Link (Z forward, X right, Y down) -->
+  <link name="camera_optical_link"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_optical_link"/>
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+
+  <!-- Gazebo Sim RGB-D Camera Sensor Plugin -->
+  <gazebo reference="camera_link">
+    <sensor name="camera" type="rgbd_camera">
+      <camera>
+        <!-- 85 degrees horizontal FOV = 1.48353 rad -->
+        <horizontal_fov>1.48353</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.10</near>
+          <far>5.00</far>
+        </clip>
+        <depth_camera>
+          <clip>
+            <near>0.10</near>
+            <far>5.00</far>
+          </clip>
+        </depth_camera>
+      </camera>
+      <always_on>1</always_on>
+      <update_rate>20</update_rate>
+      <visualize>true</visualize>
+      <topic>/camera</topic>
+    </sensor>
+  </gazebo>
+
+</robot>

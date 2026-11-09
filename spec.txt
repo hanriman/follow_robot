@@ -1,0 +1,112 @@
+# ================================================================
+# ACK-BOT: 4-WHEEL ACKERMANN DRIVE ROBOT SPECIFICATION
+# Project: Follow Robot (Master A2R)
+# Target Stack: ROS 2 + Gazebo Sim (Harmonic) + Fast Gymnasium RL
+# ================================================================
+
+# ================================================================
+# 1. COORDINATE SYSTEM CONVENTION (ROS REP 103)
+# ================================================================
+# Coordinate origin (chassis center at ground projection):
+#   +X: Forward (Front)
+#   +Y: Left
+#   +Z: Up
+#   Roll, Pitch, Yaw: Right-hand rule (counter-clockwise positive)
+# Primary Units: SI (meters [m], kilograms [kg], radians [rad], seconds [s])
+
+# ================================================================
+# 2. CHASSIS & MULTI-TIER STRUCTURE
+# ================================================================
+chassis:
+  length_x: 0.30 m           # Overall length front-to-back (30 cm)
+  width_y: 0.20 m            # Main body plate width (20 cm)
+  overhang_front: 0.00 m     # Front axle is flush with front plate edge (X = +0.15 m)
+  overhang_rear: 0.00 m      # Rear axle is flush with rear plate edge (X = -0.15 m)
+  chassis_mass: 5.0 kg       # Total chassis structural and electronic payload mass
+  total_robot_mass: 6.6 kg   # Chassis (5.0 kg) + 4 wheels (4 x 0.4 kg = 1.6 kg)
+  plate_thickness: 0.004 m   # 4 mm acrylic / aluminum deck plates
+  standoff_type: "aluminum hexagonal standoffs at four corners"
+
+  # Vertical Decks Elevation (Z from ground level Z = 0.00 m):
+  ground_clearance: 0.06 m   # Distance from ground to underside of Level 1 deck (6 cm)
+
+  deck_level_1:
+    elevation_z: 0.06 m      # Base deck (aligned with wheel axle height)
+    description: "Drive motor, Ackermann steering servo, battery, and power distribution"
+    corner_cutouts: "Chamfered / notched front corners for 30 deg wheel steering clearance"
+
+  deck_level_2:
+    elevation_z: 0.16 m      # Middle deck (+10 cm above Level 1)
+    description: "Compute board (SBC), motor drivers, IMU, and power regulators"
+
+  deck_level_3:
+    elevation_z: 0.26 m      # Top deck (+10 cm above Level 2)
+    description: "Upper mounting plate supporting sensors"
+
+# ================================================================
+# 3. WHEELS & ACKERMANN STEERING GEOMETRY
+# ================================================================
+drivetrain:
+  drive_type: "RWD"          # Rear-Wheel Drive with Front-Wheel Steering
+  controller: "ros2_control Ackermann steering controller"
+
+wheels:
+  diameter: 0.12 m           # 12 cm wheel diameter
+  radius: 0.06 m             # 6 cm wheel radius (matches axle height Z = 0.06 m)
+  width: 0.06 m              # 6 cm tire tread width
+  mass_per_wheel: 0.40 kg    # 0.4 kg per wheel assembly
+  wheelbase: 0.30 m          # Distance between front axle (X = +0.15m) and rear axle (X = -0.15m)
+  track_width_front: 0.30 m  # Center-to-center distance between left and right front wheels
+  track_width_rear: 0.30 m   # Center-to-center distance between left and right rear wheels
+  overall_width: 0.36 m      # Outer tire face to outer tire face (30 cm track + 6 cm wheel width)
+  body_to_wheel_gap: 0.02 m  # 2 cm clearance between inner tire face and chassis side wall
+
+kinematics_limits:
+  min_turning_radius: 0.485 m     # Minimum turn radius R = 0.485 m (48.5 cm)
+  max_steering_angle: 31.74 deg   # Calculated: delta = atan(L / R) = atan(0.30 / 0.485) = 0.5540 rad
+  max_linear_speed: 0.8 m/s       # Maximum forward speed (0.8 m/s)
+  min_linear_speed: -0.4 m/s      # Maximum reverse speed (scaled)
+  max_steering_rate: 60.0 deg/s   # Maximum steering angular velocity (servo speed)
+
+# ================================================================
+# 4. FRONT RGB-D CAMERA
+# ================================================================
+camera_rgbd:
+  mount_location: "Front edge, centered laterally, just below top deck"
+  position_x: 0.15 m         # X = +0.15 m (front bumper line)
+  position_y: 0.00 m         # Y = 0.00 m (centered laterally)
+  position_z: 0.25 m         # Z = 0.25 m from ground (1 cm below Level 3 top plate)
+  orientation_rpy: [0.0, 0.0, 0.0] # 0 deg pitch (completely horizontal), 0 roll, 0 yaw
+  image_width: 640           # Standard VGA width
+  image_height: 480          # Standard VGA height
+  frame_rate: 30 Hz          # 30 frames per second
+  horizontal_fov: 85.0 deg   # 85 degrees horizontal field of view
+  depth_range_min: 0.15 m    # Minimum depth sensing range
+  depth_range_max: 5.00 m    # Maximum depth sensing range
+  optical_frame_convention: "REP 103 (Z forward, X right, Y down for camera optical frame)"
+
+# ================================================================
+# 5. REAR 2D LIDAR SENSOR
+# ================================================================
+lidar_2d:
+  mount_location: "Rear axle position, centered laterally, elevated ~4 cm above top deck"
+  position_x: -0.15 m        # X = -0.15 m (aligned directly above rear wheel axle)
+  position_y: 0.00 m         # Y = 0.00 m (centered laterally)
+  position_z: 0.30 m         # Z = 0.30 m from ground (+4 cm mast above Level 3 deck)
+  orientation_rpy: [0.0, 0.0, 0.0] # Level horizontal plane
+  horizontal_fov: 360.0 deg  # Full 360 degrees horizontal scanning
+  unobstructed_view: true    # Elevated at Z = 0.30 m, beams clear Level 3 deck (Z = 0.26 m)
+  range_min: 0.10 m          # Minimum detection distance
+  range_max: 3.00 m          # Maximum detection distance (3.0 meters)
+  samples_per_scan: 360      # 1 degree angular resolution
+  update_rate: 15 Hz         # 15 scans per second
+
+# ================================================================
+# 6. RL OBJECTIVE & ARCHITECTURE
+# ================================================================
+reinforcement_learning:
+  primary_task: "Target-following (following moving person / target robot via RGB-D + 2D LiDAR)"
+  drivetrain_mode: "RWD + Front-Wheel Ackermann via ros2_control"
+  simulation_stack:
+    digital_twin: "Gazebo Harmonic (ROS 2 Humble / Jazzy) for high-fidelity evaluation & ROS nodes"
+    rl_training_env: "Fast headless Gymnasium bridge for policy training (PPO, World Model/JEPA, VLA)"

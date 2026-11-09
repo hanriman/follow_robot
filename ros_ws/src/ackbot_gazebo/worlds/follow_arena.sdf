@@ -1,0 +1,199 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+  <world name="follow_arena">
+    <!-- Physics parameters (20 Hz step matching 0.05s) -->
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.005</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <!-- Plugins -->
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <!-- Lighting -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Ground Plane (10m x 10m) -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>10 10</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>10 10</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.15 0.16 0.18 1</ambient>
+            <diffuse>0.15 0.16 0.18 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Outer Boundary Walls (10m x 10m enclosure) -->
+    <!-- North Wall -->
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0 5 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>10.2 0.2 1.0</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>10.2 0.2 1.0</size></box></geometry>
+          <material><diffuse>0.35 0.38 0.45 1</diffuse></material></visual>
+      </link>
+    </model>
+    <!-- South Wall -->
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0 -5 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>10.2 0.2 1.0</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>10.2 0.2 1.0</size></box></geometry>
+          <material><diffuse>0.35 0.38 0.45 1</diffuse></material></visual>
+      </link>
+    </model>
+    <!-- East Wall -->
+    <model name="wall_east">
+      <static>true</static>
+      <pose>5 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.2 10.2 1.0</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.2 10.2 1.0</size></box></geometry>
+          <material><diffuse>0.35 0.38 0.45 1</diffuse></material></visual>
+      </link>
+    </model>
+    <!-- West Wall -->
+    <model name="wall_west">
+      <static>true</static>
+      <pose>-5 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.2 10.2 1.0</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.2 10.2 1.0</size></box></geometry>
+          <material><diffuse>0.35 0.38 0.45 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- 6 Static Obstacle Pillars matching AckBotFollow-v0 Gymnasium parameters -->
+    <!-- Pillar 1: (1.8, 1.8), r=0.35m -->
+    <model name="pillar_1">
+      <static>true</static>
+      <pose>1.8 1.8 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.35</radius><length>1.5</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.35</radius><length>1.5</length></cylinder></geometry>
+          <material><diffuse>0.27 0.29 0.34 1</diffuse></material></visual>
+      </link>
+    </model>
+    <!-- Pillar 2: (-2.0, 1.5), r=0.40m -->
+    <model name="pillar_2">
+      <static>true</static>
+      <pose>-2.0 1.5 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.40</radius><length>1.5</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.40</radius><length>1.5</length></cylinder></geometry>
+          <material><diffuse>0.27 0.29 0.34 1</diffuse></material></visual>
+      </link>
+    </model>
+    <!-- Pillar 3: (2.0, -2.0), r=0.45m -->
+    <model name="pillar_3">
+      <static>true</static>
+      <pose>2.0 -2.0 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.45</radius><length>1.5</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.45</radius><length>1.5</length></cylinder></geometry>
+          <material><diffuse>0.27 0.29 0.34 1</diffuse></material></visual>
+      </link>
+    </model>
+    <!-- Pillar 4: (-2.2, -1.8), r=0.35m -->
+    <model name="pillar_4">
+      <static>true</static>
+      <pose>-2.2 -1.8 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.35</radius><length>1.5</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.35</radius><length>1.5</length></cylinder></geometry>
+          <material><diffuse>0.27 0.29 0.34 1</diffuse></material></visual>
+      </link>
+    </model>
+    <!-- Pillar 5: (0.0, 3.0), r=0.40m -->
+    <model name="pillar_5">
+      <static>true</static>
+      <pose>0.0 3.0 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.40</radius><length>1.5</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.40</radius><length>1.5</length></cylinder></geometry>
+          <material><diffuse>0.27 0.29 0.34 1</diffuse></material></visual>
+      </link>
+    </model>
+    <!-- Pillar 6: (0.0, -3.0), r=0.40m -->
+    <model name="pillar_6">
+      <static>true</static>
+      <pose>0.0 -3.0 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.40</radius><length>1.5</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.40</radius><length>1.5</length></cylinder></geometry>
+          <material><diffuse>0.27 0.29 0.34 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Human / Target Beacon (r = 0.20m, height = 1.70m, spawned at 2.0m ahead) -->
+    <model name="human_target">
+      <static>false</static>
+      <pose>2.0 0.0 0.85 0 0 0</pose>
+      <link name="link">
+        <gravity>false</gravity>
+        <collision name="c">
+          <geometry><cylinder><radius>0.20</radius><length>1.70</length></cylinder></geometry>
+        </collision>
+        <!-- Body -->
+        <visual name="torso">
+          <geometry><cylinder><radius>0.20</radius><length>1.40</length></cylinder></geometry>
+          <material><diffuse>0.82 0.60 0.40 1</diffuse></material>
+        </visual>
+        <!-- Head -->
+        <visual name="head">
+          <pose>0 0 0.85 0 0 0</pose>
+          <geometry><sphere><radius>0.15</radius></sphere></geometry>
+          <material><diffuse>0.90 0.75 0.48 1</diffuse></material>
+        </visual>
+        <inertial>
+          <mass>65.0</mass>
+          <inertia>
+            <ixx>10</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>10</iyy>
+            <iyz>0</iyz>
+            <izz>2</izz>
+          </inertia>
+        </inertial>
+      </link>
+      <plugin
+        filename="gz-sim-velocity-control-system"
+        name="gz::sim::systems::VelocityControl">
+        <link_name>link</link_name>
+        <topic>/human_target/cmd_vel</topic>
+      </plugin>
+    </model>
+
+  </world>
+</sdf>

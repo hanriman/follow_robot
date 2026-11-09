@@ -1,0 +1,54 @@
+# Canonical robot parameters loaded directly from spec.txt
+chassis:
+  length_x: 0.30       # meters (30 cm)
+  width_y: 0.20        # meters (20 cm)
+  overhang_front: 0.00 # meters
+  overhang_rear: 0.00  # meters
+  mass: 5.0            # kg
+  total_mass: 6.6      # kg (chassis + 4 wheels)
+  ground_clearance: 0.06 # meters (6 cm)
+
+decks:
+  level_1_z: 0.06      # meters from ground
+  level_2_z: 0.16      # meters from ground (+10 cm)
+  level_3_z: 0.26      # meters from ground (+10 cm)
+
+wheels:
+  diameter: 0.12       # meters (12 cm)
+  radius: 0.06         # meters (6 cm)
+  width: 0.06          # meters (6 cm)
+  mass: 0.40           # kg per wheel
+  wheelbase: 0.30      # meters (distance between front and rear axles)
+  track_width_front: 0.30 # meters
+  track_width_rear: 0.30  # meters
+  overall_width: 0.36     # meters (outer wheel faces)
+  chassis_gap: 0.02       # meters (clearance from chassis side to inner wheel face)
+
+kinematics:
+  min_turning_radius: 0.485         # meters (48.5 cm)
+  max_steering_angle: 0.553953      # radians (31.74 degrees, delta = atan(L / R))
+  max_linear_speed: 0.8             # m/s
+  min_linear_speed: -0.4            # m/s
+  max_steering_rate: 1.0471975512   # rad/s (60 deg/s)
+
+camera_rgbd:
+  pos_x: 0.15          # meters (front bumper line)
+  pos_y: 0.00          # meters (centered)
+  pos_z: 0.25          # meters from ground
+  pitch_rad: 0.0       # horizontal (0 deg)
+  width: 640
+  height: 480
+  fps: 30
+  fov_h_deg: 85.0
+  depth_min: 0.15
+  depth_max: 5.00
+
+lidar_2d:
+  pos_x: -0.15         # meters (rear axle center)
+  pos_y: 0.00          # meters (centered)
+  pos_z: 0.30          # meters from ground (elevated 4 cm above Level 3 deck)
+  fov_deg: 360.0
+  range_min: 0.10
+  range_max: 3.00
+  samples: 360
+  update_rate_hz: 15

@@ -1,0 +1,49 @@
+[project]
+name = "wm-control"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Hanifan Rizki Nurahman", email = "hanifanrizki@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "diffusers>=0.41.0",
+    "gymnasium[box2d]>=0.29.0",
+    "h5py>=3.16.0",
+    "matplotlib>=3.11.2",
+    "numpy>=1.24.0",
+    "pillow>=13.0.0",
+    "pydantic>=2.14.1",
+    "pygame>=2.6.1",
+    "pyyaml>=6.0.3",
+    "scipy>=1.10.0",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "tqdm>=4.70.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [
+    ".venv",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "RUF"]
+ignore = ["E501", "RUF022"]
