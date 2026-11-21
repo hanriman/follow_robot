@@ -9,9 +9,10 @@ with reparameterization and decoder reconstruction.
 from __future__ import annotations
 
 import math
+
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 
 class MultiModalSensorVAE(nn.Module):
@@ -102,9 +103,7 @@ class MultiModalSensorVAE(nn.Module):
         recon_loss = F.smooth_l1_loss(recon_x, x, beta=0.1)
 
         # 2. Analytical KL divergence: -0.5 * sum(1 + logvar - mu^2 - exp(logvar))
-        kl_loss = -0.5 * torch.mean(
-            torch.sum(1.0 + logvar - mu.pow(2) - logvar.exp(), dim=(1, 2))
-        )
+        kl_loss = -0.5 * torch.mean(torch.sum(1.0 + logvar - mu.pow(2) - logvar.exp(), dim=(1, 2)))
 
         total_loss = recon_loss + self.kl_weight * kl_loss
 

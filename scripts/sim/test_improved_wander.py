@@ -24,7 +24,9 @@ for step in range(300):
         if y >= 3.0:
             state = "TURNING"
             turn_step = 0
-            print(f"T={t:.2f}s: Started TURNING at x={x:.2f}, y={y:.2f}, yaw={math.degrees(yaw):.1f}°")
+            print(
+                f"T={t:.2f}s: Started TURNING at x={x:.2f}, y={y:.2f}, yaw={math.degrees(yaw):.1f}°"
+            )
     elif state == "TURNING":
         cmd_v = turn_speed
         cmd_w = turn_omega  # Turn left
@@ -33,7 +35,9 @@ for step in range(300):
             state = "WEST"
             yaw = math.pi  # Enforce exact West heading
             cmd_w = 0.0
-            print(f"T={t:.2f}s: Finished TURNING at x={x:.2f}, y={y:.2f}, yaw={math.degrees(yaw):.1f}°")
+            print(
+                f"T={t:.2f}s: Finished TURNING at x={x:.2f}, y={y:.2f}, yaw={math.degrees(yaw):.1f}°"
+            )
     else:  # WEST
         cmd_v = speed
         cmd_w = 0.0
@@ -46,4 +50,6 @@ for step in range(300):
     y += cmd_v * math.sin(yaw) * 0.05
 
     if step % 20 == 0:
-        print(f"Step {step:03d} (T={t:04.1f}s): State={state:<7} | Pos=({x:+.2f}, {y:+.2f}) | Yaw={math.degrees(yaw):+6.1f}° | v={cmd_v:.2f}")
+        print(
+            f"Step {step:03d} (T={t:04.1f}s): State={state:<7} | Pos=({x:+.2f}, {y:+.2f}) | Yaw={math.degrees(yaw):+6.1f}° | v={cmd_v:.2f}"
+        )

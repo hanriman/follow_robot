@@ -22,31 +22,56 @@ import argparse
 import json
 import math
 from pathlib import Path
+
+import gymnasium as gym
 import numpy as np
 import torch
-import gymnasium as gym
 
-import rl_ws.gym_ackbot  # registers AckBotFollow-v0
 from rl_ws.policies.ppo.actor_critic import ActorCritic
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CURRICULUM_PPO_CKPT = PROJECT_ROOT / "outputs/experiments/exp_20261108_154753_curriculum_ppo_active_follow/checkpoints/best_model.pt"
-LEGACY_PPO_CKPT = PROJECT_ROOT / "outputs/experiments/exp_20261103_170712_ppo_active_follow/checkpoints/best_model.pt"
+CURRICULUM_PPO_CKPT = (
+    PROJECT_ROOT
+    / "outputs/experiments/exp_20261108_154753_curriculum_ppo_active_follow/checkpoints/best_model.pt"
+)
+LEGACY_PPO_CKPT = (
+    PROJECT_ROOT
+    / "outputs/experiments/exp_20261103_170712_ppo_active_follow/checkpoints/best_model.pt"
+)
 DEFAULT_PPO_CKPT = CURRICULUM_PPO_CKPT if CURRICULUM_PPO_CKPT.exists() else LEGACY_PPO_CKPT
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data/curriculum_multi_ped"
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Harvest AckBot offline transitions for World Models")
-    parser.add_argument("--num-transitions", type=int, default=25000, help="Total transitions to collect")
+    parser = argparse.ArgumentParser(
+        description="Harvest AckBot offline transitions for World Models"
+    )
+    parser.add_argument(
+        "--num-transitions", type=int, default=25000, help="Total transitions to collect"
+    )
     parser.add_argument("--shard-size", type=int, default=5000, help="Transitions per NPZ shard")
-    parser.add_argument("--ppo-checkpoint", type=str, default=str(DEFAULT_PPO_CKPT), help="Path to PPO model")
-    parser.add_argument("--noise-std", type=float, default=0.15, help="Action exploration Gaussian noise std")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for environment and policy")
+    parser.add_argument(
+        "--ppo-checkpoint", type=str, default=str(DEFAULT_PPO_CKPT), help="Path to PPO model"
+    )
+    parser.add_argument(
+        "--noise-std", type=float, default=0.15, help="Action exploration Gaussian noise std"
+    )
+    parser.add_argument(
+        "--seed", type=int, default=42, help="Random seed for environment and policy"
+    )
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "mps", "cpu"])
-    parser.add_argument("--output-dir", type=str, default=str(DEFAULT_OUTPUT_DIR), help="Output directory")
-    parser.add_argument("--curriculum-mix", action="store_true", default=True, help="Harvest across 4 curriculum stages with distractors")
-    parser.add_argument("--distractors", type=int, default=2, help="Number of distractors in stage 4")
+    parser.add_argument(
+        "--output-dir", type=str, default=str(DEFAULT_OUTPUT_DIR), help="Output directory"
+    )
+    parser.add_argument(
+        "--curriculum-mix",
+        action="store_true",
+        default=True,
+        help="Harvest across 4 curriculum stages with distractors",
+    )
+    parser.add_argument(
+        "--distractors", type=int, default=2, help="Number of distractors in stage 4"
+    )
     return parser.parse_args()
 
 
@@ -64,7 +89,9 @@ def extract_telemetry(env: gym.Env) -> np.ndarray:
     """Extract ground-truth 8-D physical telemetry vector."""
     unwrapped = env.unwrapped
     rel_x, rel_y, rel_heading = unwrapped._get_relative_target_state()
-    target_dist = math.hypot(unwrapped.target_x - unwrapped.robot_x, unwrapped.target_y - unwrapped.robot_y)
+    target_dist = math.hypot(
+        unwrapped.target_x - unwrapped.robot_x, unwrapped.target_y - unwrapped.robot_y
+    )
     return np.array(
         [
             rel_x,
@@ -84,11 +111,15 @@ def heuristic_pursuit_action(env: gym.Env) -> np.ndarray:
     """Robust proportional pursuit policy with simple obstacle reflex."""
     unwrapped = env.unwrapped
     rel_x, rel_y, rel_heading = unwrapped._get_relative_target_state()
-    target_dist = math.hypot(unwrapped.target_x - unwrapped.robot_x, unwrapped.target_y - unwrapped.robot_y)
+    target_dist = math.hypot(
+        unwrapped.target_x - unwrapped.robot_x, unwrapped.target_y - unwrapped.robot_y
+    )
 
     # Proportional steering towards relative heading
     steer_gain = 1.2
-    target_steer = np.clip(steer_gain * rel_heading, -unwrapped.max_steering_angle, unwrapped.max_steering_angle)
+    target_steer = np.clip(
+        steer_gain * rel_heading, -unwrapped.max_steering_angle, unwrapped.max_steering_angle
+    )
 
     # Speed profile based on distance
     dist_error = target_dist - unwrapped.target_follow_distance
@@ -102,7 +133,10 @@ def heuristic_pursuit_action(env: gym.Env) -> np.ndarray:
     # LiDAR obstacle avoidance reflex: check front 60 degrees (rays 330 to 30)
     # in 360-sample lidar: 0 is front, angles advance CCW
     obs = unwrapped._get_observation()
-    lidar_scan = obs[64:424] * 5.0  # Denormalize to meters (max 5.0m)
+    lidar_scan = (
+        obs[64:424] * (unwrapped.lidar_range_max - unwrapped.lidar_range_min)
+        + unwrapped.lidar_range_min
+    )
     front_rays = np.concatenate([lidar_scan[:30], lidar_scan[330:]])
     min_front_dist = np.min(front_rays)
 
@@ -110,7 +144,11 @@ def heuristic_pursuit_action(env: gym.Env) -> np.ndarray:
         # Obstacle reflex: steer away from closest side and slow down
         left_dist = np.mean(lidar_scan[10:50])
         right_dist = np.mean(lidar_scan[310:350])
-        avoid_steer = unwrapped.max_steering_angle if left_dist > right_dist else -unwrapped.max_steering_angle
+        avoid_steer = (
+            unwrapped.max_steering_angle
+            if left_dist > right_dist
+            else -unwrapped.max_steering_angle
+        )
         target_steer = 0.7 * avoid_steer + 0.3 * target_steer
         target_v = min(target_v, 0.15)
 
@@ -191,7 +229,9 @@ def main():
 
     current_stage = choose_stage()
     current_distractors = args.distractors if current_stage == 4 else 0
-    obs, _ = env.reset(seed=args.seed, options={"stage": current_stage, "num_distractors": current_distractors})
+    obs, _ = env.reset(
+        seed=args.seed, options={"stage": current_stage, "num_distractors": current_distractors}
+    )
     current_telem = extract_telemetry(env)
 
     print("\nHarvesting transitions...")
@@ -262,7 +302,9 @@ def main():
                 next_telemetry=np.array(shard_next_telemetry, dtype=np.float32),
             )
             shard_paths.append(str(shard_file.resolve()))
-            print(f"  --> Saved shard {shard_idx:04d} with {len(shard_obs)} transitions: {shard_file.name}")
+            print(
+                f"  --> Saved shard {shard_idx:04d} with {len(shard_obs)} transitions: {shard_file.name}"
+            )
 
             shard_idx += 1
             shard_obs.clear()
@@ -277,7 +319,9 @@ def main():
             episode_step = 0
             current_stage = choose_stage()
             current_distractors = args.distractors if current_stage == 4 else 0
-            obs, _ = env.reset(options={"stage": current_stage, "num_distractors": current_distractors})
+            obs, _ = env.reset(
+                options={"stage": current_stage, "num_distractors": current_distractors}
+            )
             current_telem = extract_telemetry(env)
         else:
             obs = next_obs
@@ -316,7 +360,9 @@ def main():
     print("\nDataset index written successfully:")
     print(f"  Index file  : {index_path}")
     print(f"  Stage breakdown: {stage_counts}")
-    print(f"  Train shards: {len(train_shards)} | Val shards: {len(val_shards)} | Test shards: {len(test_shards)}")
+    print(
+        f"  Train shards: {len(train_shards)} | Val shards: {len(val_shards)} | Test shards: {len(test_shards)}"
+    )
     print("=" * 70)
     print("=" * 70)
 

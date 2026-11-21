@@ -18,12 +18,10 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import re
 import sys
 import time
 from pathlib import Path
-from typing import Optional, Tuple
 
 import cv2
 import numpy as np
@@ -31,10 +29,12 @@ from PIL import Image as PILImage
 
 try:
     import rclpy
-    from rclpy.node import Node
-    from sensor_msgs.msg import Image as RosImage, LaserScan
     from geometry_msgs.msg import Twist
+    from rclpy.node import Node
+    from sensor_msgs.msg import Image as RosImage
+    from sensor_msgs.msg import LaserScan
     from std_msgs.msg import String
+
     HAS_ROS2 = True
 except ImportError:
     HAS_ROS2 = False
@@ -82,9 +82,9 @@ class SimulationMediaRecorder(Node):
         self.hud_h = 160
 
         # Cached latest topic messages
-        self.overhead_frame: Optional[np.ndarray] = None
-        self.front_frame: Optional[np.ndarray] = None
-        self.lidar_ranges: Optional[np.ndarray] = None
+        self.overhead_frame: np.ndarray | None = None
+        self.front_frame: np.ndarray | None = None
+        self.lidar_ranges: np.ndarray | None = None
         self.lidar_angle_min = -math.pi
         self.lidar_angle_max = math.pi
         self.linear_v = 0.0
@@ -100,15 +100,9 @@ class SimulationMediaRecorder(Node):
         self.sub_overhead = self.create_subscription(
             RosImage, "/overhead_camera/image_raw", self._cb_overhead, 10
         )
-        self.sub_front = self.create_subscription(
-            RosImage, "/camera/image_raw", self._cb_front, 10
-        )
-        self.sub_scan = self.create_subscription(
-            LaserScan, "/scan", self._cb_scan, 10
-        )
-        self.sub_cmd = self.create_subscription(
-            Twist, "/cmd_vel", self._cb_cmd, 10
-        )
+        self.sub_front = self.create_subscription(RosImage, "/camera/image_raw", self._cb_front, 10)
+        self.sub_scan = self.create_subscription(LaserScan, "/scan", self._cb_scan, 10)
+        self.sub_cmd = self.create_subscription(Twist, "/cmd_vel", self._cb_cmd, 10)
         self.sub_status = self.create_subscription(
             String, "/ackbot/mpc_status", self._cb_status, 10
         )
@@ -122,7 +116,7 @@ class SimulationMediaRecorder(Node):
 
         # Frame storage
         self.gif_frames: list[PILImage.Image] = []
-        self.video_writer: Optional[cv2.VideoWriter] = None
+        self.video_writer: cv2.VideoWriter | None = None
 
         # Setup capture timer
         self.timer_period = 1.0 / self.fps
@@ -130,7 +124,9 @@ class SimulationMediaRecorder(Node):
 
         self.get_logger().info("=" * 60)
         self.get_logger().info("   ACKBOT SIMULATION MEDIA RECORDER NODE INITIALIZED    ")
-        self.get_logger().info(f"Target Duration: {self.duration:.1f}s @ {self.fps:.1f} FPS ({self.max_frames} frames)")
+        self.get_logger().info(
+            f"Target Duration: {self.duration:.1f}s @ {self.fps:.1f} FPS ({self.max_frames} frames)"
+        )
         self.get_logger().info(f"Output MP4: {self.mp4_path}")
         self.get_logger().info(f"Output GIF: {self.gif_path} ({self.gif_fps} FPS)")
         self.get_logger().info("Waiting for overhead and front camera streams...")
@@ -192,7 +188,9 @@ class SimulationMediaRecorder(Node):
             if m_v:
                 self.linear_v = float(m_v.group(1))
 
-            m_target = re.search(r"Target:\s*(\w+)\s*\(d=(\d+\.?\d*)m,\s*conf=(\d+\.?\d*)\)", msg.data)
+            m_target = re.search(
+                r"Target:\s*(\w+)\s*\(d=(\d+\.?\d*)m,\s*conf=(\d+\.?\d*)\)", msg.data
+            )
             if m_target:
                 self.target_status = m_target.group(1)
                 self.target_dist = float(m_target.group(2))
@@ -215,8 +213,13 @@ class SimulationMediaRecorder(Node):
         else:
             panel = np.full((self.canvas_h, self.left_w, 3), 30, dtype=np.uint8)
             cv2.putText(
-                panel, "Waiting for Overhead Camera...",
-                (120, self.canvas_h // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2
+                panel,
+                "Waiting for Overhead Camera...",
+                (120, self.canvas_h // 2),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (200, 200, 200),
+                2,
             )
 
         # Top Header Bar (Semi-transparent overlay)
@@ -226,12 +229,24 @@ class SimulationMediaRecorder(Node):
         cv2.addWeighted(overlay, 0.85, panel, 0.15, 0, panel)
 
         cv2.putText(
-            panel, "A2R AckBot: Gazebo Harmonic Multi-Pedestrian Tracking",
-            (16, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (255, 255, 255), 2, cv2.LINE_AA
+            panel,
+            "A2R AckBot: Gazebo Harmonic Multi-Pedestrian Tracking",
+            (16, 24),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.58,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
         )
         cv2.putText(
-            panel, "Receding Horizon LeWM CEM-MPC  |  Aerial 3D Spectator (z=8.0m)",
-            (16, 46), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 220, 255), 1, cv2.LINE_AA
+            panel,
+            "Receding Horizon LeWM CEM-MPC  |  Aerial 3D Spectator (z=8.0m)",
+            (16, 46),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.44,
+            (0, 220, 255),
+            1,
+            cv2.LINE_AA,
         )
 
         # Live Timestamp badge in top right of left panel
@@ -239,15 +254,30 @@ class SimulationMediaRecorder(Node):
         cv2.rectangle(panel, (self.left_w - 180, 10), (self.left_w - 12, 42), (32, 40, 52), -1)
         cv2.rectangle(panel, (self.left_w - 180, 10), (self.left_w - 12, 42), (0, 180, 255), 1)
         cv2.putText(
-            panel, t_badge, (self.left_w - 170, 32),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (255, 255, 255), 1, cv2.LINE_AA
+            panel,
+            t_badge,
+            (self.left_w - 170, 32),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.48,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
         )
 
         # Arena compass indicator (bottom-left)
         cv2.circle(panel, (40, self.canvas_h - 40), 20, (35, 45, 55), -1)
         cv2.circle(panel, (40, self.canvas_h - 40), 20, (100, 120, 140), 1)
-        cv2.arrowedLine(panel, (40, self.canvas_h - 26), (40, self.canvas_h - 52), (0, 255, 128), 2, tipLength=0.3)
-        cv2.putText(panel, "N", (36, self.canvas_h - 54), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 128), 1)
+        cv2.arrowedLine(
+            panel,
+            (40, self.canvas_h - 26),
+            (40, self.canvas_h - 52),
+            (0, 255, 128),
+            2,
+            tipLength=0.3,
+        )
+        cv2.putText(
+            panel, "N", (36, self.canvas_h - 54), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 128), 1
+        )
 
         return panel
 
@@ -258,8 +288,13 @@ class SimulationMediaRecorder(Node):
         else:
             panel = np.full((self.cam_h, self.right_w, 3), 24, dtype=np.uint8)
             cv2.putText(
-                panel, "Waiting for Front Camera...",
-                (80, self.cam_h // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 200, 200), 1
+                panel,
+                "Waiting for Front Camera...",
+                (80, self.cam_h // 2),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.65,
+                (200, 200, 200),
+                1,
             )
 
         # Header banner
@@ -268,8 +303,14 @@ class SimulationMediaRecorder(Node):
         cv2.addWeighted(overlay, 0.85, panel, 0.15, 0, panel)
 
         cv2.putText(
-            panel, "Robot Front RealSense Camera (RGB 640x480)",
-            (12, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (255, 255, 255), 1, cv2.LINE_AA
+            panel,
+            "Robot Front RealSense Camera (RGB 640x480)",
+            (12, 22),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.46,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
         )
 
         # Draw central tracking reticle / crosshair
@@ -285,8 +326,14 @@ class SimulationMediaRecorder(Node):
         # Target classification tag
         tag = f"TARGET: {self.target_status}"
         cv2.putText(
-            panel, tag, (cx - 45, cy + 34),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.38, reticle_color, 1, cv2.LINE_AA
+            panel,
+            tag,
+            (cx - 45, cy + 34),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.38,
+            reticle_color,
+            1,
+            cv2.LINE_AA,
         )
 
         return panel
@@ -298,8 +345,14 @@ class SimulationMediaRecorder(Node):
         # Header
         cv2.rectangle(panel, (0, 0), (self.right_w, 26), (24, 30, 40), -1)
         cv2.putText(
-            panel, "360° 2D LiDAR Polar Radar Scope (3.0m max)",
-            (12, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 220, 255), 1, cv2.LINE_AA
+            panel,
+            "360° 2D LiDAR Polar Radar Scope (3.0m max)",
+            (12, 18),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.44,
+            (0, 220, 255),
+            1,
+            cv2.LINE_AA,
         )
 
         # Radar origin (AckBot location at bottom center of scope)
@@ -312,8 +365,13 @@ class SimulationMediaRecorder(Node):
             r_px = int(r_m * scale)
             cv2.circle(panel, (ox, oy), r_px, (40, 50, 65), 1)
             cv2.putText(
-                panel, f"{r_m:.0f}m", (ox + r_px - 14, oy + 12),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.30, (80, 100, 130), 1
+                panel,
+                f"{r_m:.0f}m",
+                (ox + r_px - 14, oy + 12),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.30,
+                (80, 100, 130),
+                1,
             )
 
         # Camera FOV cone (+-42.5 deg)
@@ -339,7 +397,7 @@ class SimulationMediaRecorder(Node):
                         c = (
                             int(np.clip(255 * (1.0 - dist / 3.0), 0, 255)),
                             int(np.clip(255 * (dist / 3.0), 100, 255)),
-                            int(np.clip(180 * (dist / 3.0), 0, 255))
+                            int(np.clip(180 * (dist / 3.0), 0, 255)),
                         )
                         cv2.circle(panel, (px, py), 1, c, -1)
 
@@ -356,35 +414,59 @@ class SimulationMediaRecorder(Node):
         # Header
         cv2.rectangle(panel, (0, 0), (self.right_w, 24), (28, 35, 48), -1)
         cv2.putText(
-            panel, "LeWM CEM-MPC Telemetry & Kinematics",
-            (12, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA
+            panel,
+            "LeWM CEM-MPC Telemetry & Kinematics",
+            (12, 16),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
         )
 
         # Row 1: Target Tracking Status Pill Badge
         y1 = 48
-        is_locked = (self.target_status == "LOCKED")
+        is_locked = self.target_status == "LOCKED"
         badge_bg = (24, 96, 40) if is_locked else (24, 60, 120)
         badge_border = (40, 200, 80) if is_locked else (40, 140, 255)
         cv2.rectangle(panel, (14, y1 - 16), (115, y1 + 6), badge_bg, -1)
         cv2.rectangle(panel, (14, y1 - 16), (115, y1 + 6), badge_border, 1)
         cv2.putText(
-            panel, f"● {self.target_status}", (20, y1 - 2),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, cv2.LINE_AA
+            panel,
+            f"● {self.target_status}",
+            (20, y1 - 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.40,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
         )
 
         tracking_info = f"Range: {self.target_dist:04.1f}m   Conf: {self.target_conf:04.2f}"
         cv2.putText(
-            panel, tracking_info, (130, y1 - 2),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.42, (210, 220, 235), 1, cv2.LINE_AA
+            panel,
+            tracking_info,
+            (130, y1 - 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            (210, 220, 235),
+            1,
+            cv2.LINE_AA,
         )
 
         # Row 2: Linear Velocity Gauge ([-0.4, +0.8] m/s)
         y2 = 82
         cv2.putText(
-            panel, f"Speed: {self.linear_v:+05.2f} m/s", (14, y2),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, cv2.LINE_AA
+            panel,
+            f"Speed: {self.linear_v:+05.2f} m/s",
+            (14, y2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.40,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
         )
-        bar_x, bar_w, bar_h = 160, 180, 12
+        bar_x, bar_w, _bar_h = 160, 180, 12
         cv2.rectangle(panel, (bar_x, y2 - 10), (bar_x + bar_w, y2 + 2), (40, 48, 62), -1)
         # Normalize: -0.4 -> 0.0, 0.0 -> 0.33, +0.8 -> 1.0
         v_norm = np.clip((self.linear_v + 0.4) / 1.2, 0.0, 1.0)
@@ -400,8 +482,14 @@ class SimulationMediaRecorder(Node):
         # Row 3: Steering Angle Gauge ([-31.7, +31.7] deg)
         y3 = 114
         cv2.putText(
-            panel, f"Steer: {self.steer_angle_deg:+05.1f}°", (14, y3),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, cv2.LINE_AA
+            panel,
+            f"Steer: {self.steer_angle_deg:+05.1f}°",
+            (14, y3),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.40,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
         )
         steer_norm = np.clip((self.steer_angle_deg + 31.74) / 63.48, 0.0, 1.0)
         center_x = bar_x + bar_w // 2
@@ -417,8 +505,14 @@ class SimulationMediaRecorder(Node):
         y4 = 144
         model_str = f"LeWM CEM-MPC (H=5, N=35) | Cycle: {self.mpc_latency_ms:04.1f}ms"
         cv2.putText(
-            panel, model_str, (14, y4),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.38, (140, 160, 185), 1, cv2.LINE_AA
+            panel,
+            model_str,
+            (14, y4),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.38,
+            (140, 160, 185),
+            1,
+            cv2.LINE_AA,
         )
 
         return panel
@@ -428,21 +522,27 @@ class SimulationMediaRecorder(Node):
         canvas = np.zeros((self.canvas_h, self.canvas_w, 3), dtype=np.uint8)
 
         # Left: Overhead Spectator (720x720)
-        canvas[:, :self.left_w] = self._render_overhead_panel(t_elapsed)
+        canvas[:, : self.left_w] = self._render_overhead_panel(t_elapsed)
 
         # Top-Right: Front Camera (480x320)
-        canvas[:self.cam_h, self.left_w:] = self._render_front_camera_panel()
+        canvas[: self.cam_h, self.left_w :] = self._render_front_camera_panel()
 
         # Middle-Right: LiDAR Polar Scope (480x240)
-        canvas[self.cam_h:self.cam_h + self.lidar_h, self.left_w:] = self._render_lidar_panel()
+        canvas[self.cam_h : self.cam_h + self.lidar_h, self.left_w :] = self._render_lidar_panel()
 
         # Bottom-Right: HUD (480x160)
-        canvas[self.cam_h + self.lidar_h:, self.left_w:] = self._render_hud_panel()
+        canvas[self.cam_h + self.lidar_h :, self.left_w :] = self._render_hud_panel()
 
         # Subtle divider lines
         cv2.line(canvas, (self.left_w, 0), (self.left_w, self.canvas_h), (50, 60, 75), 2)
         cv2.line(canvas, (self.left_w, self.cam_h), (self.canvas_w, self.cam_h), (50, 60, 75), 1)
-        cv2.line(canvas, (self.left_w, self.cam_h + self.lidar_h), (self.canvas_w, self.cam_h + self.lidar_h), (50, 60, 75), 1)
+        cv2.line(
+            canvas,
+            (self.left_w, self.cam_h + self.lidar_h),
+            (self.canvas_w, self.cam_h + self.lidar_h),
+            (50, 60, 75),
+            1,
+        )
 
         return canvas
 
@@ -529,7 +629,9 @@ class SimulationMediaRecorder(Node):
 
         # 3. Export Optimized Animated GIF
         if self.gif_frames:
-            self.get_logger().info(f"Generating animated GIF ({len(self.gif_frames)} frames @ {self.gif_fps} FPS)...")
+            self.get_logger().info(
+                f"Generating animated GIF ({len(self.gif_frames)} frames @ {self.gif_fps} FPS)..."
+            )
             duration_ms = int(1000.0 / self.gif_fps)
             # Optimize GIF palette using PIL quantize
             self.gif_frames[0].save(
@@ -541,7 +643,9 @@ class SimulationMediaRecorder(Node):
                 loop=0,
             )
             gif_sz = self.gif_path.stat().st_size / (1024 * 1024)
-            self.get_logger().info(f"[SUCCESS] Animated GIF saved: {self.gif_path} ({gif_sz:.2f} MB)")
+            self.get_logger().info(
+                f"[SUCCESS] Animated GIF saved: {self.gif_path} ({gif_sz:.2f} MB)"
+            )
 
         self.get_logger().info("All media artifacts exported successfully.")
         # Terminate node cleanly
@@ -550,18 +654,33 @@ class SimulationMediaRecorder(Node):
 
 def main():
     parser = argparse.ArgumentParser(description="Record synchronized Gazebo simulation media.")
-    parser.add_argument("--duration", type=float, default=15.0, help="Recording duration in seconds")
+    parser.add_argument(
+        "--duration", type=float, default=15.0, help="Recording duration in seconds"
+    )
     parser.add_argument("--fps", type=float, default=15.0, help="Video capture FPS")
     parser.add_argument("--gif-fps", type=float, default=10.0, help="GIF frame rate")
-    parser.add_argument("--keyframe-interval", type=float, default=3.0, help="Keyframe interval in seconds")
-    parser.add_argument("--output-dir", type=str, default="outputs/reports/media", help="Output directory")
-    parser.add_argument("--mp4-name", type=str, default="gazebo_lewm_tracking.mp4", help="MP4 filename")
-    parser.add_argument("--gif-name", type=str, default="gazebo_lewm_tracking.gif", help="GIF filename")
-    parser.add_argument("--keyframe-prefix", type=str, default="gazebo_frame_", help="Keyframe filename prefix")
+    parser.add_argument(
+        "--keyframe-interval", type=float, default=3.0, help="Keyframe interval in seconds"
+    )
+    parser.add_argument(
+        "--output-dir", type=str, default="outputs/reports/media", help="Output directory"
+    )
+    parser.add_argument(
+        "--mp4-name", type=str, default="gazebo_lewm_tracking.mp4", help="MP4 filename"
+    )
+    parser.add_argument(
+        "--gif-name", type=str, default="gazebo_lewm_tracking.gif", help="GIF filename"
+    )
+    parser.add_argument(
+        "--keyframe-prefix", type=str, default="gazebo_frame_", help="Keyframe filename prefix"
+    )
     args = parser.parse_args()
 
     if not HAS_ROS2:
-        print("[ERROR] rclpy is required to run this script. Please run inside ROS 2 environment.", file=sys.stderr)
+        print(
+            "[ERROR] rclpy is required to run this script. Please run inside ROS 2 environment.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     rclpy.init()

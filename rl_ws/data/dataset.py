@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -85,10 +85,22 @@ class AckBotTransitionDataset(Dataset):
         next_obs = self.next_obs[idx]
 
         if self.augment_noise > 0.0:
-            # Add small Gaussian sensor noise and clamp to [0, 1]
-            noise = torch.randn_like(obs) * self.augment_noise
-            obs = torch.clamp(obs + noise, 0.0, 1.0)
-            next_obs = torch.clamp(next_obs + torch.randn_like(next_obs) * self.augment_noise, 0.0, 1.0)
+            # Add small Gaussian noise: clamp exteroceptive sensors to [0, 1] and proprioception to [-1, 1]
+            noise_obs = obs + torch.randn_like(obs) * self.augment_noise
+            obs = torch.cat(
+                [
+                    torch.clamp(noise_obs[:424], 0.0, 1.0),
+                    torch.clamp(noise_obs[424:], -1.0, 1.0),
+                ]
+            )
+
+            noise_next = next_obs + torch.randn_like(next_obs) * self.augment_noise
+            next_obs = torch.cat(
+                [
+                    torch.clamp(noise_next[:424], 0.0, 1.0),
+                    torch.clamp(noise_next[424:], -1.0, 1.0),
+                ]
+            )
 
         return {
             "obs": obs,
@@ -126,7 +138,9 @@ def get_dataset_splits(
     val_shards = meta["val_shards"]
     test_shards = meta["test_shards"]
 
-    train_ds = AckBotTransitionDataset(train_shards, augment_noise=noise_std if augment_train else 0.0)
+    train_ds = AckBotTransitionDataset(
+        train_shards, augment_noise=noise_std if augment_train else 0.0
+    )
     val_ds = AckBotTransitionDataset(val_shards, augment_noise=0.0)
     test_ds = AckBotTransitionDataset(test_shards, augment_noise=0.0)
 

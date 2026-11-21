@@ -78,9 +78,11 @@ class AckBotWorldModelMPCNode(Node):
         self.declare_parameter("v_min", -0.40)
         self.declare_parameter("steer_max", 0.553953)
         self.declare_parameter("control_rate", 20.0)
+        self.declare_parameter("use_ground_truth_perception", False)
 
         # Retrieve parameters
         self.scenario = str(self.get_parameter("scenario").value).lower()
+        self.use_gt_perception = bool(self.get_parameter("use_ground_truth_perception").value)
         wm_path = Path(self.get_parameter("wm_checkpoint").value)
         rew_path = Path(self.get_parameter("reward_checkpoint").value)
         self.horizon = int(self.get_parameter("horizon").value)
@@ -96,7 +98,7 @@ class AckBotWorldModelMPCNode(Node):
         # Sensor normalization ranges
         self.lidar_min = 0.10
         self.lidar_max = 3.00
-        self.cam_min = 0.10
+        self.cam_min = 0.15
         self.cam_max = 5.00
 
         self.device = torch.device("cpu")
@@ -280,7 +282,7 @@ class AckBotWorldModelMPCNode(Node):
         t0 = time.perf_counter()
 
         # 1. Target Tracking & Occlusion / Re-ID Reasoning
-        if self.has_dyn_pose:
+        if self.use_gt_perception and self.has_dyn_pose:
             tx, ty = self.target_world_pos
             rx, ry = self.robot_world_pos
             yaw = self.robot_world_yaw
@@ -302,7 +304,6 @@ class AckBotWorldModelMPCNode(Node):
             if not self.tracker.is_registered:
                 self.tracker.register_target(x_rel, y_rel, color_rgb=(0.85, 0.55, 0.15), target_id="human_target")
 
-            # In Clutter scenario: evaluate Re-ID candidates with distinct appearance colors
             if self.scenario == "clutter" and hasattr(self, "distractor_world_pos"):
                 ddx = self.distractor_world_pos[0] - rx
                 ddy = self.distractor_world_pos[1] - ry
@@ -320,17 +321,30 @@ class AckBotWorldModelMPCNode(Node):
                 self.tracker.update(x_rel, y_rel)
                 self.tracker.is_occluded = False
 
-            # Extract tracked target from Kalman filter state
             t_state = self.tracker.state
             t_dist = math.hypot(t_state[0], t_state[1])
             target_bearing = math.atan2(t_state[1], t_state[0])
         else:
-            # Fallback to depth-based tracking if dynamic pose unavailable
+            # Genuine visual RGB-D perception (Zero privileged ground-truth coordinates)
             min_idx = int(np.argmin(self.cam_depth))
             min_depth = float(self.cam_depth[min_idx]) * (self.cam_max - self.cam_min) + self.cam_min
             half_fov = math.radians(85.0) / 2.0
             target_bearing = -half_fov + (min_idx / 63.0) * (2.0 * half_fov)
-            t_dist = min_depth
+
+            if min_depth < 4.5:
+                x_rel = min_depth * math.cos(target_bearing)
+                y_rel = min_depth * math.sin(target_bearing)
+                if not self.tracker.is_registered:
+                    self.tracker.register_target(x_rel, y_rel, color_rgb=(0.85, 0.55, 0.15), target_id="human_target")
+                self.tracker.update(x_rel, y_rel)
+                self.tracker.is_occluded = False
+            else:
+                self.tracker.predict()
+                self.tracker.is_occluded = True
+
+            t_state = self.tracker.state
+            t_dist = math.hypot(t_state[0], t_state[1])
+            target_bearing = math.atan2(t_state[1], t_state[0])
 
         # 2. Assemble pure sensor observation [64 cam, 360 lidar, 2 state]
         state = np.array(
@@ -340,7 +354,7 @@ class AckBotWorldModelMPCNode(Node):
         obs = np.concatenate([self.cam_depth, self.lidar_ranges, state], dtype=np.float32)
         obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
 
-        # 3. Plan optimal action in learned latent space via CEM
+        # 3. Plan optimal action in learned latent space via CEM with tracker & LiDAR guidance
         with torch.no_grad():
             z_0 = self.lewm.encode(obs_t)
 
@@ -348,6 +362,8 @@ class AckBotWorldModelMPCNode(Node):
                 initial_z=z_0,
                 rollout_fn=lambda z, acts: self.lewm.predictor.rollout(z, acts),
                 score_fn=lambda unrolled: self.reward_head.compute_control_score(unrolled),
+                obs_t=obs,
+                tracker_status=self.tracker.get_status(),
             )
 
         raw_v = float(np.clip(max(0.0, action[0].item()), 0.0, self.v_max))
@@ -371,45 +387,17 @@ class AckBotWorldModelMPCNode(Node):
 
         min_wall_d = min(wall_distances) if wall_distances else self.lidar_max
 
-        # 5. Scenario-Specific Steering & Corridor Navigation
+        # 5. Steering Control: Latent CEM-MPC + Tracker guidance
         heading_steer = float(np.clip(1.2 * target_bearing, -self.steer_max, self.steer_max))
+        target_steer = float(np.clip(0.60 * cem_steer + 0.40 * heading_steer, -self.steer_max, self.steer_max))
 
-        if self.scenario == "corner":
-            rx, ry = self.robot_world_pos if self.has_dyn_pose else (1.2, 0.0)
-            yaw = self.robot_world_yaw if self.has_dyn_pose else math.pi / 2.0
-            yaw_deg = math.degrees(yaw)
-            facing_west = abs(yaw_deg) > 145.0
-
-            if rx > 0.40 and ry < 2.80:
-                # Stage A: East Corridor (x in [0, 5], corridor centerline x=1.2m, heading North)
-                target_steer = float(np.clip(heading_steer, -0.20, 0.20))
-            elif rx > 0.30 and not facing_west:
-                # Stage B: L-Corner Junction (divider wall ended at y=2.0, corner bend at y>=2.8m)
-                target_steer = float(np.clip(max(heading_steer, 0.45), -self.steer_max, self.steer_max))
-            else:
-                # Stage C: West Corridor (centerline y=3.5m, heading West)
-                target_steer = float(np.clip(0.35 * cem_steer + 0.65 * heading_steer, -self.steer_max, self.steer_max))
-
-        elif self.scenario == "uturn":
-            # Stage 3: Dead-end corridor along X axis (y in [-1.2, 1.2], dead-end wall at x=+3.5m)
-            rx, ry = self.robot_world_pos if self.has_dyn_pose else (-1.2, 0.0)
-            tx, ty = self.target_world_pos if self.has_dyn_pose else (0.5, 0.0)
-
-            # Target is walking back West if tx < 2.5 and human is moving towards -X
-            target_walking_back = (tx < 2.5 and (tx - rx) < 1.8 and self.tracker.state[2] < 0.0) or (tx < 2.3 and rx > 0.3)
-
-            if target_walking_back:
-                # Human returning West in North lane (y ~ +0.40m): AckBot holds lane slightly South (y ~ -0.20m)
-                lane_bias = -0.6 * (ry - (-0.20))
-                target_steer = float(np.clip(0.4 * heading_steer + 0.6 * lane_bias, -0.25, 0.25))
-            else:
-                # Following East along corridor centerline y = 0.0
-                lane_keep = -0.6 * ry
-                target_steer = float(np.clip(0.7 * heading_steer + 0.3 * lane_keep, -0.25, 0.25))
-
-        else:
-            # Stage 4 Clutter and Stage 1 Open: Latent CEM + Heading guidance
-            target_steer = float(np.clip(0.40 * cem_steer + 0.60 * heading_steer, -self.steer_max, self.steer_max))
+        # Emergency obstacle avoidance reflex if forward LiDAR detects close obstacles
+        if min_wall_d < 0.40:
+            left_wall = np.mean(raw_lidar_m[10:50])
+            right_wall = np.mean(raw_lidar_m[310:350])
+            avoid_steer = self.steer_max if left_wall > right_wall else -self.steer_max
+            target_steer = 0.60 * avoid_steer + 0.40 * target_steer
+            raw_v = min(raw_v, 0.15)
 
         # 6. Adaptive Headway Speed Governor
         if self.scenario == "uturn":

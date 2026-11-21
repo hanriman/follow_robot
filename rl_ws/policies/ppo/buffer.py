@@ -3,8 +3,8 @@ Rollout buffer for PPO with Generalized Advantage Estimation (GAE).
 Stores trajectories and generates randomized mini-batches on device.
 """
 
-import torch
 import numpy as np
+import torch
 
 
 class RolloutBuffer:
@@ -17,8 +17,12 @@ class RolloutBuffer:
         self.reset()
 
     def reset(self):
-        self.obs = torch.zeros((self.buffer_size, self.obs_dim), dtype=torch.float32, device=self.device)
-        self.actions = torch.zeros((self.buffer_size, self.act_dim), dtype=torch.float32, device=self.device)
+        self.obs = torch.zeros(
+            (self.buffer_size, self.obs_dim), dtype=torch.float32, device=self.device
+        )
+        self.actions = torch.zeros(
+            (self.buffer_size, self.act_dim), dtype=torch.float32, device=self.device
+        )
         self.logprobs = torch.zeros(self.buffer_size, dtype=torch.float32, device=self.device)
         self.rewards = torch.zeros(self.buffer_size, dtype=torch.float32, device=self.device)
         self.dones = torch.zeros(self.buffer_size, dtype=torch.float32, device=self.device)
@@ -48,15 +52,13 @@ class RolloutBuffer:
 
         last_gae_lam = 0.0
         for t in reversed(range(self.buffer_size)):
-            if t == self.buffer_size - 1:
-                next_non_terminal = 1.0 - last_done
-                next_values = last_val
-            else:
-                next_non_terminal = 1.0 - self.dones[t + 1]
-                next_values = self.values[t + 1]
+            next_values = last_val if t == self.buffer_size - 1 else self.values[t + 1]
+            next_non_terminal = 1.0 - self.dones[t]
 
             delta = self.rewards[t] + gamma * next_values * next_non_terminal - self.values[t]
-            self.advantages[t] = last_gae_lam = delta + gamma * gae_lambda * next_non_terminal * last_gae_lam
+            self.advantages[t] = last_gae_lam = (
+                delta + gamma * gae_lambda * next_non_terminal * last_gae_lam
+            )
 
         self.returns = self.advantages + self.values
 

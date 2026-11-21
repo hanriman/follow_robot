@@ -9,7 +9,7 @@ candidate action sequences during latent trajectory optimization (CEM-MPC).
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class LatentRewardHead(nn.Module):
@@ -63,14 +63,14 @@ class LatentRewardHead(nn.Module):
         if self.is_spatial:
             if z.dim() == 4:
                 # [B, H, C_z, L_z]
-                b, h, c, l = orig_shape
-                z_flat = z.view(b * h, c * l)
+                b, h, c, seq_len = orig_shape
+                z_flat = z.view(b * h, c * seq_len)
                 out = self.net(z_flat)
                 return out.view(b, h, 3)
             elif z.dim() == 3:
                 # [B, C_z, L_z]
-                b, c, l = orig_shape
-                z_flat = z.view(b, c * l)
+                b, c, seq_len = orig_shape
+                z_flat = z.view(b, c * seq_len)
                 return self.net(z_flat)
             else:
                 return self.net(z.flatten(start_dim=1))

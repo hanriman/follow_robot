@@ -2,9 +2,9 @@
 """
 Safely terminate simulation processes inside Docker without self-killing.
 """
+
 import os
 import subprocess
-import sys
 
 my_pid = os.getpid()
 parent_pid = os.getppid()

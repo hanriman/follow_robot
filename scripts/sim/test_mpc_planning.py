@@ -4,12 +4,13 @@ Diagnostic script to test LeWM CEM-MPC planning behavior on canonical observatio
 """
 
 import math
-import torch
-import numpy as np
 
-from rl_ws.policies.world_model.sigreg_wm import TeacherFreeLeWorldModel
-from rl_ws.policies.world_model.reward_head import LatentRewardHead
+import numpy as np
+import torch
+
 from rl_ws.policies.world_model.cem_planner import CEMPlanner
+from rl_ws.policies.world_model.reward_head import LatentRewardHead
+from rl_ws.policies.world_model.sigreg_wm import TeacherFreeLeWorldModel
 
 
 def main():
@@ -88,7 +89,9 @@ def main():
             )
             v_cmd = action[0].item()
             steer_cmd = action[1].item()
-            print(f"Trial {trial+1}: v={v_cmd:+.3f} m/s, steer={steer_cmd:+.3f} rad ({math.degrees(steer_cmd):+5.1f}°)")
+            print(
+                f"Trial {trial + 1}: v={v_cmd:+.3f} m/s, steer={steer_cmd:+.3f} rad ({math.degrees(steer_cmd):+5.1f}°)"
+            )
 
 
 if __name__ == "__main__":

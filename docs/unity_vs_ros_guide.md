@@ -25,7 +25,7 @@ If you have trained reinforcement learning agents using **Unity (ML-Agents)**, t
 
 In Unity, everything was inside the Unity Editor window. In robotics, the system is modular:
 
-1. **Live Gymnasium Viewer (`ackbot-eval --render` / `ackbot-view-gym`):**
+1. **Live Gymnasium Viewer (`ackbot-view-gym` / `python scripts/view_gym_env.py` / `ackbot-benchmark`):**
    * Real-time 2D top-down view with live Ackermann steering, 360° LiDAR rays, and front RGB-D camera viewport right on your desktop.
    * Runs the genuine mathematical simulation and neural network policy.
 2. **Gazebo Sim Window (Phase 4):**

@@ -5,8 +5,9 @@ optimized for PyTorch on Apple Silicon (Metal/MPS).
 """
 
 import math
+
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.distributions.normal import Normal
 
 
@@ -33,8 +34,8 @@ class ActorCritic(nn.Module):
 
         # Action scaling constants: action in [-1, 1] mapped to physical range
         self.v_scale = (self.v_max - self.v_min) / 2.0  # 0.60
-        self.v_bias = (self.v_max + self.v_min) / 2.0   # 0.20
-        self.steer_scale = self.steer_max               # 0.553953
+        self.v_bias = (self.v_max + self.v_min) / 2.0  # 0.20
+        self.steer_scale = self.steer_max  # 0.553953
 
         # 1. Front Camera Depth Branch (64 rays)
         self.cam_net = nn.Sequential(

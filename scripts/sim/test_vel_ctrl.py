@@ -4,15 +4,17 @@ Test VelocityControl response of human_target in Gazebo Harmonic.
 """
 
 import time
+
 import rclpy
-from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from rclpy.node import Node
+
 
 def main():
     rclpy.init()
     node = Node("test_vel_ctrl")
     pub = node.create_publisher(Twist, "/human_target/cmd_vel", 10)
-    
+
     # Send pure angular.z
     print("Sending pure angular.z = 1.0 rad/s for 3 seconds...")
     twist = Twist()
@@ -30,6 +32,7 @@ def main():
         time.sleep(0.1)
 
     print("Done test.")
+
 
 if __name__ == "__main__":
     main()

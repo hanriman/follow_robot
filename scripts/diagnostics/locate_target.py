@@ -2,6 +2,7 @@
 import numpy as np
 from PIL import Image
 
+
 def find_target(img_path):
     im = Image.open(img_path).convert("RGB")
     arr = np.array(im)
@@ -15,6 +16,7 @@ def find_target(img_path):
     if len(x_idx) > 0:
         return float(np.mean(x_idx)), float(np.mean(y_idx)), len(x_idx)
     return None
+
 
 for t in ["000s", "003s", "006s", "009s", "012s"]:
     res = find_target(f"outputs/reports/media/gazebo_frame_{t}.png")

@@ -38,7 +38,7 @@ class AckBotPolicyNode(Node):
         self.declare_parameter("steer_max", 0.553953)
         self.declare_parameter("lidar_min", 0.10)
         self.declare_parameter("lidar_max", 3.00)
-        self.declare_parameter("cam_min", 0.10)
+        self.declare_parameter("cam_min", 0.15)
         self.declare_parameter("cam_max", 5.00)
 
         ckpt_path = Path(self.get_parameter("checkpoint_path").value)
@@ -91,6 +91,8 @@ class AckBotPolicyNode(Node):
             x_old = np.linspace(0, 1, len(raw))
             x_new = np.linspace(0, 1, 360)
             raw = np.interp(x_new, x_old, raw).astype(np.float32)
+        # Shift 180 degrees so index 0 corresponds to front heading (matching Gym env)
+        raw = np.roll(raw, len(raw) // 2)
         # Normalize to [0, 1]
         self.lidar_ranges = np.clip((raw - self.lidar_min) / (self.lidar_max - self.lidar_min), 0.0, 1.0)
 
@@ -105,9 +107,9 @@ class AckBotPolicyNode(Node):
                 return
 
             mid_row = data[msg.height // 2, :]
-            # Sample 64 points across 85 deg FOV
+            # Sample 64 points across 85 deg FOV, reversing so right=-FOV/2 to left=+FOV/2 matches Gym
             sample_idx = np.linspace(0, msg.width - 1, 64, dtype=int)
-            sampled = mid_row[sample_idx]
+            sampled = mid_row[sample_idx][::-1]
             sampled = np.nan_to_num(sampled, nan=self.cam_max, posinf=self.cam_max, neginf=self.cam_min)
             self.cam_depth = np.clip((sampled - self.cam_min) / (self.cam_max - self.cam_min), 0.0, 1.0)
         except Exception:

@@ -8,6 +8,7 @@ to verify that the teacher-free world model does not suffer from dimensional or 
 from __future__ import annotations
 
 from typing import Any
+
 import torch
 
 
@@ -32,7 +33,11 @@ def compute_effective_rank(z: torch.Tensor, eps: float = 1e-8) -> dict[str, floa
             - 'rank_ratio': Normalized ratio effective_rank / D in (0, 1].
             - 'condition_number': Ratio of largest to smallest singular value \sigma_max / \sigma_min.
     """
-    z_flat = z.reshape(-1, z.shape[-1]).float()
+    if z.dim() == 3 and z.shape[1] <= 8 and z.shape[2] >= 16:
+        # Spatial latent tensor [B, C, L] -> flatten per-sample to [B, C * L]
+        z_flat = z.reshape(z.shape[0], -1).float()
+    else:
+        z_flat = z.reshape(-1, z.shape[-1]).float()
     N, D = z_flat.shape
 
     if N < 2:
@@ -75,7 +80,11 @@ def compute_gaussianity_diagnostics(z: torch.Tensor, eps: float = 1e-6) -> dict[
     r"""
     Compute statistical moments and goodness-of-fit diagnostics against N(0, I_D).
     """
-    z_flat = z.reshape(-1, z.shape[-1]).float()
+    if z.dim() == 3 and z.shape[1] <= 8 and z.shape[2] >= 16:
+        # Spatial latent tensor [B, C, L] -> flatten per-sample to [B, C * L]
+        z_flat = z.reshape(z.shape[0], -1).float()
+    else:
+        z_flat = z.reshape(-1, z.shape[-1]).float()
     N, D = z_flat.shape
 
     if N < 4:
@@ -100,8 +109,13 @@ def compute_gaussianity_diagnostics(z: torch.Tensor, eps: float = 1e-6) -> dict[
     off_diag_mask = ~torch.eye(D, dtype=torch.bool, device=z_flat.device)
     off_diag_corr = float(corr_matrix[off_diag_mask].abs().mean().item())
 
-    # Excess kurtosis along dimensions: E[(z-\mu)^4] / \sigma^4 - 3
+    # Skewness: E[(z-\mu)^3] / \sigma^3
     centered = z_flat - mean
+    m3 = (centered.pow(3)).mean(dim=0)
+    skewness = m3 / (std.pow(3).clamp(min=eps))
+    mean_skewness = float(skewness.abs().mean().item())
+
+    # Excess kurtosis along dimensions: E[(z-\mu)^4] / \sigma^4 - 3
     m4 = (centered.pow(4)).mean(dim=0)
     kurtosis = m4 / (var.pow(2).clamp(min=eps)) - 3.0
     mean_excess_kurtosis = float(kurtosis.abs().mean().item())
@@ -111,6 +125,8 @@ def compute_gaussianity_diagnostics(z: torch.Tensor, eps: float = 1e-6) -> dict[
         "var_deviation": var_deviation,
         "off_diag_corr": off_diag_corr,
         "excess_kurtosis": mean_excess_kurtosis,
+        "skewness_mean": mean_skewness,
+        "kurtosis_mean": mean_excess_kurtosis + 3.0,
     }
 
 
@@ -202,7 +218,9 @@ class RidgeRegressionProbe:
         pred_norm = X_aug @ self.weights
         return pred_norm * self.y_std + self.y_mean
 
-    def score_r2(self, X: torch.Tensor, Y: torch.Tensor, labels: list[str] | None = None) -> dict[str, Any]:
+    def score_r2(
+        self, X: torch.Tensor, Y: torch.Tensor, labels: list[str] | None = None
+    ) -> dict[str, Any]:
         """Compute R^2 score for each target dimension and overall mean R^2."""
         preds = self.predict(X)
         ss_res = ((Y - preds) ** 2).sum(dim=0)
@@ -216,5 +234,7 @@ class RidgeRegressionProbe:
             "r2_per_dim": r2_per_dim,
         }
         if labels is not None:
-            res["per_dimension_r2"] = {labels[i]: r2_per_dim[i] for i in range(min(len(labels), len(r2_per_dim)))}
+            res["per_dimension_r2"] = {
+                labels[i]: r2_per_dim[i] for i in range(min(len(labels), len(r2_per_dim)))
+            }
         return res

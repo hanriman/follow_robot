@@ -65,6 +65,22 @@ def test_xacro_parameters_match_canonical_spec():
     assert props["track_width"] == 0.30
     assert abs(props["max_steer"] - 0.553953) < 1e-5
 
+    # Verify chassis deck thickness from spec.txt (4 mm)
+    chassis_xacro = ROS_WS_DIR / "ackbot_description" / "urdf" / "chassis.xacro"
+    c_tree = ET.parse(chassis_xacro)
+    c_props = {
+        e.attrib.get("name"): float(e.attrib.get("value"))
+        for e in c_tree.getroot().findall("{http://www.ros.org/wiki/xacro}property")
+    }
+    assert c_props["deck_thickness"] == 0.004
+
+    # Verify camera min depth clip from spec.txt (0.15 m)
+    cam_xacro = ROS_WS_DIR / "ackbot_description" / "urdf" / "sensors" / "camera.xacro"
+    cam_tree = ET.parse(cam_xacro)
+    near_elem = cam_tree.getroot().find(".//clip/near")
+    assert near_elem is not None
+    assert float(near_elem.text) == 0.15
+
 
 def test_ros_packages_manifests():
     """Verify package.xml files exist and declare correct package names."""
@@ -103,4 +119,3 @@ def test_wm_mpc_node_and_launch_files():
     assert bringup_launch.exists(), f"{bringup_launch} not found"
     with open(bringup_launch, "r") as f:
         compile(f.read(), str(bringup_launch), "exec")
-

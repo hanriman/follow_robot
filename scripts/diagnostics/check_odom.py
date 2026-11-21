@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 import math
+
 import rclpy
-from rclpy.node import Node
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import Image, LaserScan
+from rclpy.node import Node
+from sensor_msgs.msg import LaserScan
 
 
 class OdomChecker(Node):

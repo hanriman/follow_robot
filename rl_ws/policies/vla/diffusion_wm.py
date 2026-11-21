@@ -10,9 +10,10 @@ Provides accelerated multi-step latent unrolling using Denoising Diffusion Impli
 from __future__ import annotations
 
 import math
+
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 from rl_ws.policies.world_model.vae import MultiModalSensorVAE
 
@@ -120,16 +121,22 @@ class ActionConditionedUNet1D(nn.Module):
 
         # Level 1: 32 length
         self.down1 = AdaGNResBlock1D(base_channels, base_channels, cond_dim, dropout=dropout)
-        self.downsample = nn.Conv1d(base_channels, base_channels * 2, kernel_size=4, stride=2, padding=1)
+        self.downsample = nn.Conv1d(
+            base_channels, base_channels * 2, kernel_size=4, stride=2, padding=1
+        )
 
         # Level 2: 16 length
-        self.down2 = AdaGNResBlock1D(base_channels * 2, base_channels * 2, cond_dim, dropout=dropout)
+        self.down2 = AdaGNResBlock1D(
+            base_channels * 2, base_channels * 2, cond_dim, dropout=dropout
+        )
 
         # Mid / Bottleneck: 16 length
         self.mid = AdaGNResBlock1D(base_channels * 2, base_channels * 2, cond_dim, dropout=dropout)
 
         # U-Net Decoder
-        self.upsample = nn.ConvTranspose1d(base_channels * 2, base_channels, kernel_size=4, stride=2, padding=1)
+        self.upsample = nn.ConvTranspose1d(
+            base_channels * 2, base_channels, kernel_size=4, stride=2, padding=1
+        )
         self.up1 = AdaGNResBlock1D(base_channels * 2, base_channels, cond_dim, dropout=dropout)
 
         # Output head
@@ -220,13 +227,15 @@ class GaussianDiffusion(nn.Module):
         Accelerated deterministic DDIM sampling to predict next latent z_{t+1}.
         """
         device = context_latent.device
-        b, c, l = context_latent.shape
+        b, c, seq_len = context_latent.shape
 
         # Start from pure Gaussian noise z_K ~ N(0, I)
-        z = torch.randn((b, c, l), device=device, dtype=torch.float32)
+        z = torch.randn((b, c, seq_len), device=device, dtype=torch.float32)
 
         # Uniformly subsample timesteps: [K-1, ..., 0]
-        step_indices = torch.linspace(self.num_timesteps - 1, 0, ddim_steps, dtype=torch.long, device=device)
+        step_indices = torch.linspace(
+            self.num_timesteps - 1, 0, ddim_steps, dtype=torch.long, device=device
+        )
 
         for i, step_idx in enumerate(step_indices):
             t = torch.full((b,), step_idx.item(), device=device, dtype=torch.long)

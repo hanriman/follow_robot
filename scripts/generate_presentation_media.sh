@@ -72,7 +72,7 @@ cleanup() {
     if [ "${KEEP_ALIVE}" != "true" ]; then
         echo ""
         echo "[+] Automatically shutting down simulation stack to release CPU..."
-        docker exec "${CONTAINER_NAME}" python3 /workspace/scripts/clean_simulation_processes.py || true
+        docker exec "${CONTAINER_NAME}" python3 /workspace/scripts/sim/clean_simulation_processes.py || true
         echo "[✓] Simulation stopped. Host CPU returned to 0% idle."
     else
         echo ""
@@ -111,7 +111,7 @@ record_scenario() {
 
     # Kill any stale duplicate simulation instances
     echo "[+] Cleaning previous simulation processes..."
-    docker exec "${CONTAINER_NAME}" python3 /workspace/scripts/clean_simulation_processes.py
+    docker exec "${CONTAINER_NAME}" python3 /workspace/scripts/sim/clean_simulation_processes.py
     sleep 1
 
     # Launch Bringup in Container
@@ -130,7 +130,7 @@ record_scenario() {
     echo "[*] Launching Synchronized Media Recorder (${DURATION}s @ ${FPS} FPS)..."
     docker exec -t "${CONTAINER_NAME}" bash -c \
         "source /opt/ros/jazzy/setup.bash && source /workspace/ros_ws/install/setup.bash && \
-         python3 /workspace/scripts/record_simulation_media.py \
+         python3 /workspace/scripts/sim/record_simulation_media.py \
             --duration ${DURATION} \
             --fps ${FPS} \
             --gif-fps ${GIF_FPS} \
@@ -141,7 +141,7 @@ record_scenario() {
             --output-dir ${MEDIA_DIR}"
 
     echo "[✓] Scenario ${sc^^} recording completed."
-    docker exec "${CONTAINER_NAME}" python3 /workspace/scripts/clean_simulation_processes.py
+    docker exec "${CONTAINER_NAME}" python3 /workspace/scripts/sim/clean_simulation_processes.py
     sleep 2
 }
 

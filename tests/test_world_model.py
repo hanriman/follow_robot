@@ -11,37 +11,30 @@ Tests:
 7. Sharded Dataset loader integration
 """
 
-import math
-from pathlib import Path
 import tempfile
+from pathlib import Path
+
 import numpy as np
-import pytest
 import torch
 
+from rl_ws.data.dataset import AckBotTransitionDataset
+from rl_ws.policies.vla.diffusion_wm import (
+    ActionConditionedDiffusionWorldModel,
+)
+from rl_ws.policies.world_model.cem_planner import CEMPlanner
+from rl_ws.policies.world_model.representation import (
+    RidgeRegressionProbe,
+    compute_effective_rank,
+)
 from rl_ws.policies.world_model.sigreg import (
+    ActionConditionedTransitionLoss,
     EppsPulleyGaussianityTest,
     SigRegLoss,
-    ActionConditionedTransitionLoss,
-)
-from rl_ws.policies.world_model.representation import (
-    compute_effective_rank,
-    compute_gaussianity_diagnostics,
-    RidgeRegressionProbe,
 )
 from rl_ws.policies.world_model.sigreg_wm import (
-    AckBotSensorEncoder,
-    ActionConditionedPredictor,
     TeacherFreeLeWorldModel,
 )
 from rl_ws.policies.world_model.vae import MultiModalSensorVAE
-from rl_ws.policies.vla.diffusion_wm import (
-    ActionConditionedUNet1D,
-    GaussianDiffusion,
-    ActionConditionedDiffusionWorldModel,
-)
-from rl_ws.policies.world_model.reward_head import LatentRewardHead
-from rl_ws.policies.world_model.cem_planner import CEMPlanner
-from rl_ws.data.dataset import AckBotTransitionDataset
 
 
 def get_test_device():
@@ -53,6 +46,7 @@ def get_test_device():
 # ---------------------------------------------------------------------------
 # 1. SIGReg & Epps-Pulley Analytical Gaussianity Tests
 # ---------------------------------------------------------------------------
+
 
 def test_epps_pulley_exact_standard_normal():
     """EP test on large standard normal sample should be close to 0."""
@@ -105,6 +99,7 @@ def test_sigreg_gradient_flow():
 # 2. Teacher-Free Le World Model Joint Autograd
 # ---------------------------------------------------------------------------
 
+
 def test_teacher_free_lewm_joint_gradients():
     """
     Verify Teacher-Free LeWM training principles:
@@ -142,15 +137,13 @@ def test_teacher_free_lewm_joint_gradients():
 
     # Check encoder received non-zero gradients
     encoder_has_grads = any(
-        p.grad is not None and torch.norm(p.grad).item() > 0.0
-        for p in model.encoder.parameters()
+        p.grad is not None and torch.norm(p.grad).item() > 0.0 for p in model.encoder.parameters()
     )
     assert encoder_has_grads, "Encoder parameters must receive gradients jointly!"
 
     # Check dynamics predictor received non-zero gradients
     predictor_has_grads = any(
-        p.grad is not None and torch.norm(p.grad).item() > 0.0
-        for p in model.predictor.parameters()
+        p.grad is not None and torch.norm(p.grad).item() > 0.0 for p in model.predictor.parameters()
     )
     assert predictor_has_grads, "Predictor parameters must receive gradients jointly!"
 
@@ -172,6 +165,7 @@ def test_lewm_multi_step_rollout_shape():
 # ---------------------------------------------------------------------------
 # 3. Multi-Modal Sensor VAE Reconstruction
 # ---------------------------------------------------------------------------
+
 
 def test_sensor_vae_forward_and_reconstruction_bounds():
     """
@@ -214,6 +208,7 @@ def test_sensor_vae_forward_and_reconstruction_bounds():
 # ---------------------------------------------------------------------------
 # 4. Action-Conditioned Latent Diffusion & DDIM Sampling
 # ---------------------------------------------------------------------------
+
 
 def test_action_conditioned_diffusion_ddim_sampling():
     """Verify ActionConditionedDiffusionWorldModel AdaGN UNet and fast DDIM sampler."""
@@ -258,6 +253,7 @@ def test_action_conditioned_diffusion_ddim_sampling():
 # 5. CEM Latent Action Planner Bounds
 # ---------------------------------------------------------------------------
 
+
 def test_cem_planner_ackermann_bounds():
     """
     Verify CEMPlanner respects canonical AckBot limits:
@@ -297,6 +293,7 @@ def test_cem_planner_ackermann_bounds():
 # 6. Representation Diagnostics & Ridge Probing
 # ---------------------------------------------------------------------------
 
+
 def test_effective_rank_calculation():
     """Verify Roy's Participation Ratio for full-rank vs collapsed matrices."""
     # Full rank isotropic Gaussian
@@ -334,6 +331,7 @@ def test_ridge_regression_probe():
 # 7. Sharded Dataset Integration
 # ---------------------------------------------------------------------------
 
+
 def test_sharded_dataset_loading():
     """Verify AckBotTransitionDataset correctly reads compressed NPZ files."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -358,3 +356,55 @@ def test_sharded_dataset_loading():
         assert sample["action"].shape == (2,)
         assert sample["telemetry"].shape == (8,)
         assert sample["terminal"].dtype == torch.bool
+
+
+def test_dataset_augmentation_preserves_negative_proprioception():
+    """Verify AckBotTransitionDataset preserves negative velocity and right turns in proprioception [424:426]."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_shard = Path(tmpdir) / "shard_neg.npz"
+        n = 8
+        obs = np.ones((n, 426), dtype=np.float32) * 0.5
+        obs[:, 424] = -0.40  # Reverse velocity
+        obs[:, 425] = -0.55  # Right steering
+        np.savez_compressed(
+            tmp_shard,
+            obs=obs,
+            next_obs=obs,
+            action=np.zeros((n, 2), dtype=np.float32),
+            reward=np.zeros(n, dtype=np.float32),
+            terminal=np.zeros(n, dtype=bool),
+            telemetry=np.zeros((n, 8), dtype=np.float32),
+            next_telemetry=np.zeros((n, 8), dtype=np.float32),
+        )
+
+        dataset = AckBotTransitionDataset([tmp_shard], augment_noise=0.01)
+        sample = dataset[0]
+
+        # Negative steering and velocity must NOT be clamped to 0.0
+        assert sample["obs"][424] < -0.20, (
+            f"Expected negative velocity preserved, got {sample['obs'][424]}"
+        )
+        assert sample["obs"][425] < -0.40, (
+            f"Expected negative steering preserved, got {sample['obs'][425]}"
+        )
+
+
+def test_cem_planner_warm_start_and_reset():
+    """Verify CEMPlanner receding-horizon warm-starting and reset."""
+    device = torch.device("cpu")
+    planner = CEMPlanner(horizon=4, pop_size=10, num_elites=3, num_iters=2, device=device)
+    z0 = torch.randn(1, 128)
+
+    assert planner.prev_mean is None
+
+    action1 = planner.plan(
+        initial_z=z0,
+        rollout_fn=lambda z, acts: z.unsqueeze(1).repeat(1, acts.size(1), 1),
+        score_fn=lambda unrolled: torch.ones(unrolled.size(0), unrolled.size(1)),
+    )
+    assert action1 is not None
+    assert planner.prev_mean is not None
+    assert planner.prev_mean.shape == (4, 2)
+
+    planner.reset()
+    assert planner.prev_mean is None

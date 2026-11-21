@@ -6,13 +6,14 @@ Diagnostic trajectory recorder to track exact positions, headway, and clearances
 import math
 import sys
 import time
+
+import numpy as np
 import rclpy
-from rclpy.node import Node
-from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
+from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
-import numpy as np
 
 
 class TrajectoryDiagnoser(Node):
@@ -90,7 +91,9 @@ class TrajectoryDiagnoser(Node):
     def _print_summary(self):
         print("\n" + "=" * 60)
         print("Trajectory Diagnosis Finished.")
-        print(f"Final Robot Pose: x={self.robot_x:.2f}, y={self.robot_y:.2f}, yaw={math.degrees(self.robot_yaw):.1f}°")
+        print(
+            f"Final Robot Pose: x={self.robot_x:.2f}, y={self.robot_y:.2f}, yaw={math.degrees(self.robot_yaw):.1f}°"
+        )
         print("=" * 60)
 
 

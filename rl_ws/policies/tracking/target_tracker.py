@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import uuid
+
 import numpy as np
 
 
@@ -48,8 +49,8 @@ class TargetRegistrationTracker:
         )
 
         # Process noise Q
-        q_pos = (process_noise_pos**2)
-        q_vel = (process_noise_vel**2)
+        q_pos = process_noise_pos**2
+        q_vel = process_noise_vel**2
         self.Q = np.diag([q_pos, q_pos, q_vel, q_vel]).astype(np.float64)
 
         # Measurement matrix H (observing x, y)
@@ -86,7 +87,7 @@ class TargetRegistrationTracker:
         self.target_id = target_id or f"target_{uuid.uuid4().hex[:6]}"
         self.registered_color = color_rgb or (0.2, 0.4, 0.8)
         self.state = np.array([x, y, vx, vy], dtype=np.float64)
-        self.covariance = np.diag([0.05, 0.05, 0.10, 0.10]).astype(np.float64)
+        self.covariance = np.diag([0.05, 0.05, 0.50, 0.50]).astype(np.float64)
         self.is_registered = True
         self.is_occluded = False
         self.occlusion_steps = 0
@@ -108,7 +109,7 @@ class TargetRegistrationTracker:
     def update(self, measured_x: float, measured_y: float) -> bool:
         """
         Update Kalman filter with observation measurement [x, y].
-        Applies Mahalanobis distance gating to reject spurious obstacle reflections.
+        Applies continuous prediction step followed by Mahalanobis distance gating.
 
         Returns:
             True if measurement passed gate and updated filter, False if rejected.
@@ -116,6 +117,10 @@ class TargetRegistrationTracker:
         if not self.is_registered:
             self.register_target(measured_x, measured_y)
             return True
+
+        # 1. State and covariance prediction step
+        self.state = self.F @ self.state
+        self.covariance = self.F @ self.covariance @ self.F.T + self.Q
 
         z = np.array([measured_x, measured_y], dtype=np.float64)
         z_pred = self.H @ self.state
@@ -132,7 +137,10 @@ class TargetRegistrationTracker:
             d2 = 999.0
 
         if d2 > self.gate_threshold:
-            # Measurement too far from predicted tracklet (likely a wall/obstacle)
+            # Measurement too far from predicted tracklet (rejected)
+            self.is_occluded = True
+            self.occlusion_steps += 1
+            self.total_tracked_steps += 1
             return False
 
         # Kalman gain K = P H^T S^-1
@@ -143,6 +151,7 @@ class TargetRegistrationTracker:
 
         self.is_occluded = False
         self.occlusion_steps = 0
+        self.total_tracked_steps += 1
         return True
 
     def update_with_candidates(
@@ -173,12 +182,18 @@ class TargetRegistrationTracker:
                 "cost": 999.0,
             }
 
+        # 1. Prediction step before evaluating candidate measurements
+        self.state = self.F @ self.state
+        self.covariance = self.F @ self.covariance @ self.F.T + self.Q
+
         # Predict innovation covariance S = H P H^T + R
         S = self.H @ self.covariance @ self.H.T + self.R
         try:
             S_inv = np.linalg.inv(S)
         except np.linalg.LinAlgError:
-            self.predict()
+            self.is_occluded = True
+            self.occlusion_steps += 1
+            self.total_tracked_steps += 1
             return {
                 "associated": False,
                 "selected_candidate": None,
@@ -193,7 +208,9 @@ class TargetRegistrationTracker:
         best_d2 = float("inf")
         best_cdist = float("inf")
 
-        reg_color = np.array(self.registered_color, dtype=np.float64) if self.registered_color else None
+        reg_color = (
+            np.array(self.registered_color, dtype=np.float64) if self.registered_color else None
+        )
 
         for cand in candidates:
             z = np.array([cand["x"], cand["y"]], dtype=np.float64)
@@ -240,7 +257,9 @@ class TargetRegistrationTracker:
             }
         else:
             # No candidate passed both spatial gate and color gate
-            self.predict()
+            self.is_occluded = True
+            self.occlusion_steps += 1
+            self.total_tracked_steps += 1
             return {
                 "associated": False,
                 "selected_candidate": None,
@@ -249,8 +268,13 @@ class TargetRegistrationTracker:
                 "cost": 999.0,
             }
 
-    def get_status(self) -> dict:
-        """Return tracking telemetry and confidence."""
+    def get_status(
+        self,
+        robot_x: float = 0.0,
+        robot_y: float = 0.0,
+        robot_yaw: float = 0.0,
+    ) -> dict:
+        """Return tracking telemetry and confidence relative to robot pose."""
         if not self.is_registered:
             return {
                 "registered": False,
@@ -268,12 +292,23 @@ class TargetRegistrationTracker:
 
         x, y, vx, vy = self.state
         speed = math.hypot(vx, vy)
-        dist = math.hypot(x, y)
-        bearing = math.atan2(y, x)
+
+        # Transform to ego-centric coordinates relative to robot pose
+        dx = x - robot_x
+        dy = y - robot_y
+        cos_yaw = math.cos(-robot_yaw)
+        sin_yaw = math.sin(-robot_yaw)
+        rel_x = dx * cos_yaw - dy * sin_yaw
+        rel_y = dx * sin_yaw + dy * cos_yaw
+
+        dist = math.hypot(dx, dy)
+        bearing = math.atan2(rel_y, rel_x)
 
         # Confidence decays during extended occlusions
         pos_var = float(np.trace(self.covariance[:2, :2]))
-        confidence = max(0.0, min(1.0, 1.0 / (1.0 + 2.0 * pos_var) * math.exp(-0.05 * self.occlusion_steps)))
+        confidence = max(
+            0.0, min(1.0, 1.0 / (1.0 + 2.0 * pos_var) * math.exp(-0.05 * self.occlusion_steps))
+        )
 
         return {
             "registered": True,

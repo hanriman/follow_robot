@@ -3,10 +3,10 @@
 Test script to log exact poses of human_target and ackbot from Gazebo dynamic_pose/info.
 """
 
+import math
+import re
 import subprocess
 import time
-import re
-import math
 
 
 def parse_pose_msg(block):
@@ -18,12 +18,12 @@ def parse_pose_msg(block):
         return None, None
 
     px, py, pz = 0.0, 0.0, 0.0
-    m_pos = re.search(r'position\s*\{([^}]*)\}', block)
+    m_pos = re.search(r"position\s*\{([^}]*)\}", block)
     if m_pos:
         pos_str = m_pos.group(1)
-        mx = re.search(r'x:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)', pos_str)
-        my = re.search(r'y:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)', pos_str)
-        mz = re.search(r'z:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)', pos_str)
+        mx = re.search(r"x:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)", pos_str)
+        my = re.search(r"y:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)", pos_str)
+        mz = re.search(r"z:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)", pos_str)
         if mx:
             px = float(mx.group(1))
         if my:
@@ -32,13 +32,13 @@ def parse_pose_msg(block):
             pz = float(mz.group(1))
 
     qx, qy, qz, qw = 0.0, 0.0, 0.0, 1.0
-    m_ori = re.search(r'orientation\s*\{([^}]*)\}', block)
+    m_ori = re.search(r"orientation\s*\{([^}]*)\}", block)
     if m_ori:
         ori_str = m_ori.group(1)
-        mx = re.search(r'x:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)', ori_str)
-        my = re.search(r'y:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)', ori_str)
-        mz = re.search(r'z:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)', ori_str)
-        mw = re.search(r'w:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)', ori_str)
+        mx = re.search(r"x:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)", ori_str)
+        my = re.search(r"y:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)", ori_str)
+        mz = re.search(r"z:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)", ori_str)
+        mw = re.search(r"w:\s*([+-]?\d+\.?\d*(?:e[+-]?\d+)?)", ori_str)
         if mx:
             qx = float(mx.group(1))
         if my:

@@ -52,12 +52,12 @@
           <format>R8G8B8</format>
         </image>
         <clip>
-          <near>0.10</near>
+          <near>0.15</near>
           <far>5.00</far>
         </clip>
         <depth_camera>
           <clip>
-            <near>0.10</near>
+            <near>0.15</near>
             <far>5.00</far>
           </clip>
         </depth_camera>

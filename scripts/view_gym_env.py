@@ -14,28 +14,34 @@ Supports selectable policy controllers:
 from __future__ import annotations
 
 import argparse
-import time
 import math
+import time
 from pathlib import Path
-import numpy as np
-import torch
+
 import gymnasium as gym
 import matplotlib
+import numpy as np
+import torch
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-import rl_ws.gym_ackbot  # registers AckBotFollow-v0
 from rl_ws.policies.ppo.actor_critic import ActorCritic
+from rl_ws.policies.vla.diffusion_wm import ActionConditionedDiffusionWorldModel
+from rl_ws.policies.world_model.cem_planner import CEMPlanner
+from rl_ws.policies.world_model.reward_head import LatentRewardHead
 from rl_ws.policies.world_model.sigreg_wm import TeacherFreeLeWorldModel
 from rl_ws.policies.world_model.vae import MultiModalSensorVAE
-from rl_ws.policies.vla.diffusion_wm import ActionConditionedDiffusionWorldModel
-from rl_ws.policies.world_model.reward_head import LatentRewardHead
-from rl_ws.policies.world_model.cem_planner import CEMPlanner
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_PPO = PROJECT_ROOT / "outputs/experiments/exp_20261108_154753_curriculum_ppo_active_follow/checkpoints/best_model.pt"
+DEFAULT_PPO = (
+    PROJECT_ROOT
+    / "outputs/experiments/exp_20261108_154753_curriculum_ppo_active_follow/checkpoints/best_model.pt"
+)
 DEFAULT_LEWM = PROJECT_ROOT / "outputs/experiments/sigreg_curriculum/checkpoints/best_model.pt"
-DEFAULT_REW_LEWM = PROJECT_ROOT / "outputs/experiments/mpc_curriculum/checkpoints/reward_head_lewm.pt"
+DEFAULT_REW_LEWM = (
+    PROJECT_ROOT / "outputs/experiments/mpc_curriculum/checkpoints/reward_head_lewm.pt"
+)
 DEFAULT_VAE = PROJECT_ROOT / "outputs/experiments/vae_curriculum/checkpoints/best_model.pt"
 DEFAULT_DIFF = PROJECT_ROOT / "outputs/experiments/diffusion_curriculum/checkpoints/best_model.pt"
 DEFAULT_REW_VAE = PROJECT_ROOT / "outputs/experiments/mpc_curriculum/checkpoints/reward_head_vae.pt"
@@ -108,7 +114,9 @@ def main():
     print(f"Active Scenario : {stage_names[args.stage]}")
     print(f"Active Policy   : {args.policy.upper()}")
     print(f"Distractors     : {args.distractors} pedestrians")
-    print(f"View Mode       : {args.view.upper()} ({'4-Panel 3D Multi-View Dashboard' if args.view == '3d' else 'Classic 2D Top-Down'})")
+    print(
+        f"View Mode       : {args.view.upper()} ({'4-Panel 3D Multi-View Dashboard' if args.view == '3d' else 'Classic 2D Top-Down'})"
+    )
     print(f"Device          : {device}")
     print("Features & Visuals:")
     print("  • Bipedal Human Walker: Animated 2 feet stepping at 1.6 Hz cadence")
@@ -177,14 +185,16 @@ def main():
 
             policy_fn = lewm_act
         else:
-            print(f"[!] Warning: LeWM checkpoint not found. Using heuristic controller.")
+            print("[!] Warning: LeWM checkpoint not found. Using heuristic controller.")
             args.policy = "heuristic"
 
     elif args.policy == "diffusion":
         if DEFAULT_DIFF.exists() and DEFAULT_VAE.exists() and DEFAULT_REW_VAE.exists():
             print("[+] Loading AC-LDM Diffusion World Model & Sensor VAE...")
             vae = MultiModalSensorVAE(in_dim=426, latent_channels=4, latent_length=32).to(device)
-            vae.load_state_dict(torch.load(DEFAULT_VAE, map_location=device, weights_only=False)["model_state_dict"])
+            vae.load_state_dict(
+                torch.load(DEFAULT_VAE, map_location=device, weights_only=False)["model_state_dict"]
+            )
             vae.eval()
 
             diff_wm = ActionConditionedDiffusionWorldModel(
@@ -195,14 +205,26 @@ def main():
                 num_timesteps=1000,
                 vae=vae,
             ).to(device)
-            diff_wm.load_state_dict(torch.load(DEFAULT_DIFF, map_location=device, weights_only=False)["model_state_dict"])
+            diff_wm.load_state_dict(
+                torch.load(DEFAULT_DIFF, map_location=device, weights_only=False)[
+                    "model_state_dict"
+                ]
+            )
             diff_wm.eval()
 
-            rew_vae = LatentRewardHead(in_dim=128, is_spatial=True, spatial_channels=4, spatial_length=32).to(device)
-            rew_vae.load_state_dict(torch.load(DEFAULT_REW_VAE, map_location=device, weights_only=False)["model_state_dict"])
+            rew_vae = LatentRewardHead(
+                in_dim=128, is_spatial=True, spatial_channels=4, spatial_length=32
+            ).to(device)
+            rew_vae.load_state_dict(
+                torch.load(DEFAULT_REW_VAE, map_location=device, weights_only=False)[
+                    "model_state_dict"
+                ]
+            )
             rew_vae.eval()
 
-            planner_diff = CEMPlanner(horizon=3, pop_size=15, num_elites=3, num_iters=2, device=device)
+            planner_diff = CEMPlanner(
+                horizon=3, pop_size=15, num_elites=3, num_iters=2, device=device
+            )
             reset_fn = planner_diff.reset
 
             def diff_act(obs):
@@ -296,12 +318,22 @@ def main():
                 rel_x, rel_y, rel_heading = env.unwrapped._get_relative_target_state()
                 target_dist = math.hypot(rel_x, rel_y)
 
-                if args.stage == 3 and env.unwrapped.scenario_state == "WALK_BACK" and env.unwrapped.target_x > env.unwrapped.robot_x:
+                if (
+                    args.stage == 3
+                    and env.unwrapped.scenario_state == "WALK_BACK"
+                    and env.unwrapped.target_x > env.unwrapped.robot_x
+                ):
                     desired_v = -0.25
                     desired_steer = 0.0
                 else:
                     desired_v = float(np.clip(0.6 * (target_dist - 0.80), -0.2, 0.80))
-                    desired_steer = float(np.clip(1.4 * rel_heading, -env.unwrapped.max_steering_angle, env.unwrapped.max_steering_angle))
+                    desired_steer = float(
+                        np.clip(
+                            1.4 * rel_heading,
+                            -env.unwrapped.max_steering_angle,
+                            env.unwrapped.max_steering_angle,
+                        )
+                    )
 
                 action = np.array([desired_v, desired_steer], dtype=np.float32)
 
@@ -340,6 +372,7 @@ def main():
             save_path.parent.mkdir(parents=True, exist_ok=True)
             if not is_headless and env.unwrapped.window is not None:
                 import pygame
+
                 pygame.image.save(env.unwrapped.window, str(save_path))
                 print(f"[+] Saved visual screenshot to: {save_path.resolve()}")
             elif captured_frame is not None:

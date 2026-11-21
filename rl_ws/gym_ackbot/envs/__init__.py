@@ -1,6 +1,7 @@
 """Environment registrations for gym_ackbot."""
 
 from gymnasium.envs.registration import register
+
 from rl_ws.gym_ackbot.envs.ackbot_follow_env import AckBotFollowEnv
 
 register(

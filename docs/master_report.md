@@ -70,17 +70,26 @@ $$\delta \in [-\delta_{\max}, +\delta_{\max}] = [-0.553953, +0.553953]\text{ rad
 
 The maximum steering slew rate is bounded by $|\dot{\delta}| \le 1.5\text{ rad/s}$, and maximum longitudinal acceleration is $|a| \le 2.0\text{ m/s}^2$.
 
-### 2.2 Mechanical Deck & Sensor Placements
+### 2.2 Mechanical Deck, Mass Budget & Sensor Placements
 
-To prevent wheel collisions and maintain zero longitudinal overhang, AckBot features a 3-tiered chassis:
+To prevent wheel collisions and maintain zero longitudinal overhang, AckBot features a 3-tiered chassis with 4 mm deck plates ($0.004\text{ m}$):
 * **Lower Deck ($Z = 0.06\text{ m}$):** Houses drive motors, steering servo linkage, and battery payload.
 * **Mid Deck ($Z = 0.16\text{ m}$):** Houses onboard compute (ARM64 SoC) and power distribution.
 * **Top Deck ($Z = 0.26\text{ m}$):** Houses sensor mounts.
 
+**Physical Mass Distribution (Calibrated to `spec.txt`):**
+* **Chassis Base Link:** $3.508\text{ kg}$
+* **Deck Plates & Standoffs:** $0.942\text{ kg}$
+* **Front Steering Knuckles & Hardware:** $0.350\text{ kg}$
+* **Sensor Payload (RealSense D435i + RPLiDAR):** $0.200\text{ kg}$
+* **Total Chassis Assembly:** **$5.000\text{ kg}$**
+* **Drive Wheels ($4 \times 0.400\text{ kg}$):** **$1.600\text{ kg}$**
+* **Total Vehicle Mass:** **$6.600\text{ kg}$**
+
 **Sensor Mount Coordinates (Relative to `base_footprint` origin at rear-axle ground projection):**
 1. **Front RealSense D435i Camera:** Mounted at $(x = +0.15\text{ m}, y = 0.00\text{ m}, z = 0.25\text{ m})$ with zero pitch ($0^\circ$).
    * Horizontal Field of View (FOV): $85^\circ$ ($\pm 42.5^\circ$).
-   * Range: $d_{\min} = 0.10\text{ m}, d_{\max} = 5.00\text{ m}$.
+   * Range: $d_{\min} = 0.15\text{ m}, d_{\max} = 5.00\text{ m}$.
    * Simulated as $64$ normalized depth rays across the horizontal arc.
 2. **Elevated Rear 2D LiDAR:** Mounted at $(x = -0.15\text{ m}, y = 0.00\text{ m}, z = 0.30\text{ m})$ on a stilt tower to ensure an unobstructed $360^\circ$ planar sweep.
    * Field of View: $360^\circ$ ($-\pi \text{ to } +\pi$).
@@ -130,11 +139,16 @@ To track the designated target amid distractors, the system integrates an Extend
 
 $$\mathbf{x}_{\text{target}} = [x, y, \dot{x}, \dot{y}]^T, \quad \mathbf{P}_{k|k-1} = \mathbf{F} \mathbf{P}_{k-1|k-1} \mathbf{F}^T + \mathbf{Q}$$
 
+Prior to measurement association, an explicit time-update step projects target state and covariance forward: $\hat{\mathbf{x}}_{k|k-1} = \mathbf{F}\hat{\mathbf{x}}_{k-1|k-1}$. The state covariance is initialized with responsive velocity uncertainty $\mathbf{P}_0 = \operatorname{diag}([0.10, 0.10, 0.50, 0.50])$, ensuring rapid convergence when tracking dynamic walkers.
+
 For candidate detections $\mathbf{z}_j$ with appearance embedding $\mathbf{c}_j \in \mathbb{R}^3$, the association cost combines spatial Mahalanobis distance $d_M^2$ and cosine appearance distance $d_A$:
 
 $$C(j) = d_M^2(\mathbf{z}_j, \hat{\mathbf{z}}) + \lambda_A \cdot \big(1 - \cos(\mathbf{c}_j, \mathbf{c}_{\text{target}})\big)$$
 
-Candidates exceeding the chi-squared gating threshold ($d_M^2 > 9.21$, $p < 0.01$) are rejected as distractors, preventing identity swaps during pedestrian crossing events.
+Candidates exceeding the chi-squared gating threshold ($d_M^2 > 9.21$, $p < 0.01$) are rejected as distractors, preventing identity swaps during pedestrian crossing events. For ego-vehicle planning, the world-frame target state $(\hat{x}, \hat{y})$ is transformed into the robot's local ego-centric coordinates via 2D rigid transformation:
+
+$$\Delta x_{\text{ego}} = (\hat{x} - x_{\text{robot}}) \cos(\psi) + (\hat{y} - y_{\text{robot}}) \sin(\psi)$$
+$$\Delta y_{\text{ego}} = -(\hat{x} - x_{\text{robot}}) \sin(\psi) + (\hat{y} - y_{\text{robot}}) \cos(\psi)$$
 
 ---
 
@@ -168,6 +182,12 @@ $$\mathbf{h}_{\text{fused}} = \tanh(\mathbf{W}_f [\mathbf{h}_{\text{cam}}, \math
 The actor outputs the mean action $\mu(o_t) \in [-1, 1]^2$, scaled to physical actuation limits:
 
 $$\mathcal{L}_{\text{CLIP}}(\theta) = \hat{\mathbb{E}}_t \left[ \min\left( r_t(\theta) \hat{A}_t, \ \text{clip}(r_t(\theta), 1-\epsilon, 1+\epsilon) \hat{A}_t \right) \right]$$
+
+Generalized Advantage Estimation (GAE) computes temporal difference residuals with strict terminal masking:
+
+$$\delta_t^V = r_t + \gamma V(s_{t+1}) (1 - d_t) - V(s_t), \quad \hat{A}_t = \delta_t^V + \gamma \lambda (1 - d_t) \hat{A}_{t+1}$$
+
+where $d_t \in \{0, 1\}$ indicates true environment termination (collision). On episode truncation (time-limit expiration without collision), value continuity is preserved by bootstrapping $\tilde{r}_t = r_t + \gamma V(s_{t+1})$ with $d_t = 0$, preventing artificial value drops at truncation boundaries.
 
 ### 4.2 Method 2: Multi-Modal Sensor VAE
 
@@ -226,13 +246,13 @@ converges to **75.1 out of 128 dimensions**, proving that the latent space spans
 ### 4.5 Latent CEM-MPC Action Planning
 
 Given current observation $o_t$, the robot encodes $z_0 = f_\theta(o_t)$ and executes receding-horizon Cross-Entropy Method (CEM) action planning:
-1. Initialize Gaussian action distribution across horizon $H = 5$: $\mathcal{N}(\boldsymbol{\mu}_a, \text{diag}(\boldsymbol{\sigma}_a^2))$.
-2. Sample $N = 35$ candidate action sequences $\mathbf{a}^{(n)} = [a_0^{(n)}, \dots, a_{H-1}^{(n)}]$.
+1. **Warm-Started Distribution:** If a prior planning cycle succeeded, shift the elite mean forward by one timestep: $\boldsymbol{\mu}_{0:H-2} \leftarrow \boldsymbol{\mu}_{1:H-1}^*$, initializing the tail step with zero-mean exploration $\boldsymbol{\mu}_{H-1} \leftarrow \mathbf{0}$.
+2. Sample $N = 35$ candidate action sequences $\mathbf{a}^{(n)} = [a_0^{(n)}, \dots, a_{H-1}^{(n)}] \sim \mathcal{N}(\boldsymbol{\mu}_a, \operatorname{diag}(\boldsymbol{\sigma}_a^2))$.
 3. Unroll latent trajectories in a single vectorized PyTorch forward pass: $\hat{z}_{k+1}^{(n)} = g_\psi(\hat{z}_k^{(n)}, a_k^{(n)})$.
-4. Evaluate trajectory score using the trained latent reward head $R_\omega(z)$:
-   $$J(\mathbf{a}^{(n)}) = \sum_{k=1}^H \gamma^k R_\omega(\hat{z}_k^{(n)}) - \lambda_{\text{smooth}} \| a_k^{(n)} - a_{k-1}^{(n)} \|_2^2$$
+4. Evaluate trajectory score using the trained latent reward head $R_\omega(z)$ and LiDAR obstacle shielding:
+   $$J(\mathbf{a}^{(n)}) = \sum_{k=1}^H \gamma^k R_\omega(\hat{z}_k^{(n)}) - \lambda_{\text{smooth}} \| a_k^{(n)} - a_{k-1}^{(n)} \|_2^2 - \mathcal{P}_{\text{obs}}(a_0^{(n)}, o_t)$$
 5. Select elite trajectories ($N_{\text{elite}} = 5$), update $(\boldsymbol{\mu}_a, \boldsymbol{\sigma}_a)$, and iterate for $K = 3$ iterations.
-6. Execute first action $a_0^* = [v_t^*, \delta_t^*]$ on the vehicle.
+6. Execute first action $a_0^* = [v_t^*, \delta_t^*]$ on the vehicle and store $\boldsymbol{\mu}^*$ for warm-starting.
 
 ---
 
@@ -325,7 +345,7 @@ flowchart LR
 
 ### 7.1 Synchronized Multi-View Media Capture
 
-To produce high-definition visual documentation, [`scripts/record_simulation_media.py`](file:///Users/hanriman/Documents/master/A2R/follow_robot/scripts/record_simulation_media.py) captures and synchronizes all sensor and control feeds into a $1200\times 720$ canvas at 15 FPS:
+To produce high-definition visual documentation, [`scripts/sim/record_simulation_media.py`](file:///Users/hanriman/Documents/master/A2R/follow_robot/scripts/sim/record_simulation_media.py) captures and synchronizes all sensor and control feeds into a $1200\times 720$ canvas at 15 FPS:
 
 ![AckBot Gazebo Harmonic Simulation Tracking](figures/gazebo_lewm_tracking.gif)
 
@@ -410,6 +430,9 @@ This research demonstrates that for resource-constrained mobile robots operating
 
 ### Code & Artifacts
 * **Repository:** Fully reproducible via `uv run` on macOS ARM64 and Docker on Linux.
+* **Unified Benchmarking Suite:** Complete 4-model evaluation, hardware disturbance stress tests, and closed-loop Latent MPC benchmarks (`scripts/benchmark.py --suite comparative|sim2real|mpc|occlusion`).
+* **Unified World Model Training:** End-to-end JEPA SigReg LeWM, multi-modal Sensor VAE, 1D U-Net diffusion, and latent reward heads via a single CLI (`scripts/train_world_model.py --model lewm|vae|diffusion|reward`).
 * **3D Multi-View Gymnasium Twin:** Interactive desktop viewer with 3D isometric arena, 64-depth ray front RealSense camera viewport, polar LiDAR radar scope, and live MPC telemetry (`scripts/view_gym_env.py --view 3d`).
-* **Test Suite:** 47 automated tests verifying geometry, kinematics, Re-ID, VAE, Diffusion, LeWM, and ROS 2 launch manifests (`uv run pytest tests/ -v`).
+* **Test Suite:** 52 automated tests verifying geometry, kinematics, Re-ID, VAE, Diffusion, LeWM, GAE buffer, and ROS 2 launch manifests (`uv run pytest tests/ -v`).
+* **Modular Scripts Architecture:** Clean separation into [`scripts/`](file:///Users/hanriman/Documents/master/A2R/follow_robot/scripts) root entry points, [`scripts/diagnostics/`](file:///Users/hanriman/Documents/master/A2R/follow_robot/scripts/diagnostics/) for sensor and TF inspection, and [`scripts/sim/`](file:///Users/hanriman/Documents/master/A2R/follow_robot/scripts/sim/) for Gazebo controllers and 4-view media recording.
 * **Checkpoints:** All trained checkpoints preserved in `outputs/experiments/`.

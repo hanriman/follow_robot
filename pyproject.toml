@@ -24,18 +24,11 @@ dev = [
 ]
 
 [project.scripts]
-ackbot-visualize = "scripts.visualize_robot:main"
-ackbot-test-env = "scripts.test_env_rollout:main"
-ackbot-view-gym = "scripts.view_gym_env:main"
-ackbot-train = "scripts.run_train:main"
-ackbot-eval = "scripts.run_eval:main"
+ackbot-train-ppo = "rl_ws.train:main"
 ackbot-harvest = "scripts.harvest_data:main"
-ackbot-train-sigreg = "scripts.train_sigreg:main"
-ackbot-train-vae = "scripts.train_vae:main"
-ackbot-train-diffusion = "scripts.train_diffusion:main"
-ackbot-train-reward = "scripts.train_reward_heads:main"
-ackbot-eval-wm = "scripts.evaluate_comparative:main"
-ackbot-mpc = "scripts.run_latent_mpc:main"
+ackbot-train-wm = "scripts.train_world_model:main"
+ackbot-benchmark = "scripts.benchmark:main"
+ackbot-view-gym = "scripts.view_gym_env:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -45,5 +38,12 @@ build-backend = "hatchling.build"
 packages = ["rl_ws", "scripts"]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -6,11 +6,11 @@ and Target Registration / EKF Occlusion Tracking Architecture.
 from __future__ import annotations
 
 import math
+
 import numpy as np
-import pytest
 
 from rl_ws.gym_ackbot.envs.ackbot_follow_env import AckBotFollowEnv
-from rl_ws.gym_ackbot.envs.human_target import BipedalHumanTarget, CLOTHING_PALETTE
+from rl_ws.gym_ackbot.envs.human_target import CLOTHING_PALETTE, BipedalHumanTarget
 from rl_ws.policies.tracking.target_tracker import TargetRegistrationTracker
 
 
@@ -67,7 +67,8 @@ def test_sensor_dual_leg_raytracing():
     walker = BipedalHumanTarget(
         x=2.0,
         y=0.0,
-        yaw=math.pi / 2.0,  # Facing +Y (so stance is separated along X axis: Left at +X, Right at -X)
+        yaw=math.pi
+        / 2.0,  # Facing +Y (so stance is separated along X axis: Left at +X, Right at -X)
         stance_width=0.40,  # Wide stance to test gap
         stride_length=0.0,  # No stride swing for clean test
         leg_radius=0.08,
@@ -82,8 +83,8 @@ def test_sensor_dual_leg_raytracing():
     # Ray 1: Directed straight up along x=2.0 (through the gap between the feet)
     # Cos=0, Sin=1 (heading north)
     hit_gap = walker.ray_intersection(
-        ray_origin_x=2.0,
-        ray_origin_y=-3.0,
+        ray_origin_x=ray_origin_x,
+        ray_origin_y=ray_origin_y,
         cos_angle=0.0,
         sin_angle=1.0,
         max_range=10.0,
@@ -92,16 +93,18 @@ def test_sensor_dual_leg_raytracing():
     assert hit_gap == 10.0
 
     # Ray 2: Directed directly at left foot (x=1.80)
-    angle_to_left = math.atan2(left_leg.y - (-3.0), left_leg.x - 2.0)
+    angle_to_left = math.atan2(left_leg.y - ray_origin_y, left_leg.x - ray_origin_x)
     hit_left = walker.ray_intersection(
-        ray_origin_x=2.0,
-        ray_origin_y=-3.0,
+        ray_origin_x=ray_origin_x,
+        ray_origin_y=ray_origin_y,
         cos_angle=math.cos(angle_to_left),
         sin_angle=math.sin(angle_to_left),
         max_range=10.0,
     )
     assert hit_left < 10.0
-    assert math.isclose(hit_left, math.hypot(left_leg.x - 2.0, left_leg.y - (-3.0)) - 0.08, abs_tol=0.05)
+    assert math.isclose(
+        hit_left, math.hypot(left_leg.x - 2.0, left_leg.y - (-3.0)) - 0.08, abs_tol=0.05
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -402,5 +405,3 @@ def test_replay_stage_sampling():
     # No stages beyond unlocked
     assert max(sampled_stages) <= 3
     env.close()
-
-

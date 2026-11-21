@@ -20,7 +20,7 @@ if [ "${1:-}" = "stop" ] || [ "${1:-}" = "kill" ]; then
     echo "          STOPPING ACKBOT SIMULATION STACK                            "
     echo "======================================================================"
     if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        docker exec "${CONTAINER_NAME}" python3 /workspace/scripts/clean_simulation_processes.py
+        docker exec "${CONTAINER_NAME}" python3 /workspace/scripts/sim/clean_simulation_processes.py
         echo "[✓] Simulation processes terminated cleanly. Container is idle (0% CPU)."
     else
         echo "[i] Container '${CONTAINER_NAME}' is not running."
@@ -28,15 +28,26 @@ if [ "${1:-}" = "stop" ] || [ "${1:-}" = "kill" ]; then
     exit 0
 fi
 
-CONTROLLER="${1:-mpc}"
-SCENARIO="${2:-corner}"
+CONTROLLER="mpc"
+SCENARIO="corner"
 HEADLESS="false"
 
-# Check for headless flag in any argument
+# Robust argument parsing supporting positional modes and flags in any order
 for arg in "$@"; do
-    if [ "$arg" = "--headless" ] || [ "$arg" = "-s" ]; then
-        HEADLESS="true"
-    fi
+    case "$arg" in
+        mpc|ppo)
+            CONTROLLER="$arg"
+            ;;
+        corner|uturn|clutter|open)
+            SCENARIO="$arg"
+            ;;
+        --headless|-s)
+            HEADLESS="true"
+            ;;
+        --daemon|-d)
+            # Default execution mode inside container
+            ;;
+    esac
 done
 
 echo "======================================================================"
@@ -61,7 +72,7 @@ echo "[+] Container '${CONTAINER_NAME}' is active."
 
 # Kill any existing ROS 2 launch processes inside container to prevent duplicate CPU load
 echo "[+] Cleaning previous ROS 2 processes inside container..."
-docker exec "${CONTAINER_NAME}" python3 /workspace/scripts/clean_simulation_processes.py
+docker exec "${CONTAINER_NAME}" python3 /workspace/scripts/sim/clean_simulation_processes.py
 sleep 1
 
 # Launch bringup in background inside container

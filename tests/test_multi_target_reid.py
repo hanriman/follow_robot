@@ -5,11 +5,10 @@ Unit tests for Multi-Pedestrian Distractor Simulation and Gated Re-ID Tracking.
 from __future__ import annotations
 
 import math
+
 import numpy as np
-import pytest
 
 from rl_ws.gym_ackbot.envs.ackbot_follow_env import AckBotFollowEnv
-from rl_ws.gym_ackbot.envs.human_target import BipedalHumanTarget
 from rl_ws.policies.tracking.target_tracker import TargetRegistrationTracker
 
 
@@ -59,7 +58,9 @@ def test_sensor_raytracing_with_multiple_pedestrians():
     # Ray passing through (0, 0) towards +X should hit the closer distractor at ~1.2m, not the target at 2.5m
     center_idx = len(cam_ranges) // 2
     assert cam_ranges[center_idx] < 1.40
-    assert math.isclose(cam_ranges[center_idx], 1.2 - (env.chassis_length / 2.0) - 0.09, abs_tol=0.15)
+    assert math.isclose(
+        cam_ranges[center_idx], 1.2 - (env.chassis_length / 2.0) - 0.09, abs_tol=0.15
+    )
     env.close()
 
 
@@ -69,7 +70,9 @@ def test_gated_reid_association_rejects_distractor():
     crimson_red = (0.80, 0.20, 0.20)
     navy_blue = (0.15, 0.30, 0.65)
 
-    tracker.register_target(x=2.0, y=0.0, vx=0.25, vy=0.0, color_rgb=crimson_red, target_id="target_0")
+    tracker.register_target(
+        x=2.0, y=0.0, vx=0.25, vy=0.0, color_rgb=crimson_red, target_id="target_0"
+    )
 
     # Candidate A: Navy blue distractor walking close to the target
     cand_distractor = {
@@ -132,7 +135,13 @@ def test_crossing_pedestrian_occlusion_and_reid_recovery():
 
     # Initial 5 steps tracking cleanly
     for s in range(1, 6):
-        cand = {"x": 2.0 + 0.30 * (s * 0.05), "y": 0.0, "color_rgb": target_color, "id": "target", "is_target": True}
+        cand = {
+            "x": 2.0 + 0.30 * (s * 0.05),
+            "y": 0.0,
+            "color_rgb": target_color,
+            "id": "target",
+            "is_target": True,
+        }
         res = tracker.update_with_candidates([cand])
         assert res["associated"] is True
 
@@ -169,3 +178,32 @@ def test_crossing_pedestrian_occlusion_and_reid_recovery():
     assert reid_res["selected_candidate"]["is_target"] is True
     assert tracker.is_occluded is False
     assert tracker.occlusion_steps == 0
+
+
+def test_tracker_velocity_convergence_from_position_measurements():
+    """Verify Kalman filter updates velocity state (vx, vy) from position measurements when initialized at vx=0."""
+    tracker = TargetRegistrationTracker(dt=0.05)
+    tracker.register_target(x=1.0, y=0.0, vx=0.0, vy=0.0)
+
+    true_vx = 0.60
+    # Feed 20 consecutive position updates of moving target
+    for k in range(1, 25):
+        measured_x = 1.0 + true_vx * (k * 0.05)
+        tracker.update(measured_x, 0.0)
+
+    est_vx = tracker.state[2]
+    assert abs(est_vx - true_vx) < 0.10, f"Expected estimated vx ~ {true_vx}, got {est_vx}"
+
+
+def test_tracker_egocentric_status():
+    """Verify get_status(robot_x, robot_y, robot_yaw) transforms world target position into ego-centric frame."""
+    tracker = TargetRegistrationTracker(dt=0.05)
+    # Target at world (3.0, 4.0)
+    tracker.register_target(x=3.0, y=4.0)
+
+    # Robot at world (3.0, 2.0) facing North (yaw = pi/2)
+    stat = tracker.get_status(robot_x=3.0, robot_y=2.0, robot_yaw=math.pi / 2.0)
+
+    # In world: dx = 0.0, dy = +2.0. With robot facing North, target is directly in front: dist = 2.0, bearing = 0.0 rad
+    assert math.isclose(stat["estimated_dist"], 2.0, abs_tol=1e-3)
+    assert math.isclose(stat["estimated_bearing"], 0.0, abs_tol=1e-3)

@@ -4,9 +4,10 @@
   <!-- Physical constants from spec.txt -->
   <xacro:property name="chassis_length" value="0.30"/>
   <xacro:property name="chassis_width" value="0.20"/>
-  <xacro:property name="deck_thickness" value="0.005"/>
+  <xacro:property name="deck_thickness" value="0.004"/>
   <xacro:property name="deck_spacing" value="0.10"/>
-  <xacro:property name="chassis_mass" value="5.0"/>
+  <!-- Base link mass calibrated so total chassis assembly (with decks, knuckles & sensors) is 5.0 kg, total robot is 6.6 kg -->
+  <xacro:property name="chassis_base_mass" value="3.508"/>
 
   <!-- Macro for inertias -->
   <xacro:macro name="box_inertia" params="m x y z">
@@ -47,7 +48,7 @@
         <box size="${chassis_length} ${chassis_width} 0.20"/>
       </geometry>
     </collision>
-    <xacro:box_inertia m="${chassis_mass}" x="${chassis_length}" y="${chassis_width}" z="0.20"/>
+    <xacro:box_inertia m="${chassis_base_mass}" x="${chassis_length}" y="${chassis_width}" z="0.20"/>
   </link>
 
   <!-- Level 2 deck (Middle plate, Z = 16cm -> origin at +0.10m above Level 1) -->

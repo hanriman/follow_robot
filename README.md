@@ -1,9 +1,8 @@
 # AckBot: Autonomous Person-Following with Latent World Models & Diffusion MPC
-agy --conversation=1dcba7bc-66da-4699-acec-516ddc9ad429
 
 <div align="center">
 
-[![Tests](https://img.shields.io/badge/Tests-47%20Passed-success?style=flat-square&logo=pytest)](file:///Users/hanriman/Documents/master/A2R/follow_robot/tests)
+[![Tests](https://img.shields.io/badge/Tests-52%20Passed-success?style=flat-square&logo=pytest)](file:///Users/hanriman/Documents/master/A2R/follow_robot/tests)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20ARM64%20%7C%20Ubuntu%2024.04%20ARM64-blue?style=flat-square&logo=apple)](file:///Users/hanriman/Documents/master/A2R/follow_robot/docker)
 [![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy%20Jalisco-orange?style=flat-square&logo=ros)](file:///Users/hanriman/Documents/master/A2R/follow_robot/ros_ws)
 [![Gazebo](https://img.shields.io/badge/Gazebo-Harmonic%208.8.0-red?style=flat-square&logo=gazebo)](file:///Users/hanriman/Documents/master/A2R/follow_robot/ros_ws/src/ackbot_gazebo)
@@ -123,7 +122,7 @@ cd follow_robot
 # Install dependencies into isolated .venv (Python 3.12)
 uv sync
 
-# Run complete test suite (47 unit & integration tests)
+# Run complete test suite (52 unit & integration tests)
 uv run pytest tests/ -v
 ```
 
@@ -142,7 +141,43 @@ uv run python scripts/view_gym_env.py --stage 4 --policy lewm --distractors 3
 uv run python scripts/view_gym_env.py --stage 2 --policy model
 ```
 
-### 3. Native ARM64 Docker ROS 2 Gazebo Simulation
+### 3. Consolidated Benchmarking Suite
+
+Run comparative evaluations, Sim-to-Real hardware stress tests, or MPC tracking benchmarks:
+
+```bash
+# Run comparative 4-model evaluation (PPO vs VAE vs AC-LDM vs LeWM)
+uv run python scripts/benchmark.py --suite comparative
+
+# Run closed-loop Latent MPC benchmark
+uv run python scripts/benchmark.py --suite mpc --episodes 10
+
+# Run Sim-to-Real hardware degradation stress test
+uv run python scripts/benchmark.py --suite sim2real
+
+# Run blind corner & obstacle occlusion test suite
+uv run python scripts/benchmark.py --suite occlusion
+```
+
+### 4. World Model & Reward Head Training
+
+Train any world model representation or CEM reward head via a single unified CLI:
+
+```bash
+# Train Teacher-Free LeWM (SigReg JEPA)
+uv run python scripts/train_world_model.py --model lewm --epochs 15
+
+# Train Multi-Modal Sensor VAE
+uv run python scripts/train_world_model.py --model vae --epochs 15
+
+# Train Action-Conditioned Latent Diffusion (AC-LDM)
+uv run python scripts/train_world_model.py --model diffusion --epochs 15
+
+# Train Latent Reward Heads for CEM-MPC planning
+uv run python scripts/train_world_model.py --model reward --epochs 5
+```
+
+### 5. Native ARM64 Docker ROS 2 Gazebo Simulation
 
 Launch the complete physical digital twin inside Docker for any curriculum stage:
 
@@ -163,7 +198,7 @@ Launch the complete physical digital twin inside Docker for any curriculum stage
 - **Foxglove Studio Telemetry:** Open [https://studio.foxglove.dev](https://studio.foxglove.dev), connect to `ws://localhost:8765`, and import [`outputs/reports/media/ackbot_foxglove_layout.json`](outputs/reports/media/ackbot_foxglove_layout.json).
 - **noVNC 3D GUI:** Open [http://localhost:6080](http://localhost:6080) to inspect the Gazebo Harmonic window directly in your browser.
 
-### 4. 1-Command Media & Presentation Generator
+### 6. 1-Command Media & Presentation Generator
 
 Generate synchronized 18-second multi-modal video recordings, animated GIFs, and presentation keyframes with automatic CPU cleanup to 0% idle:
 
@@ -203,8 +238,9 @@ follow_robot/
 │   ├── Dockerfile
 │   └── docker-compose.yml
 ├── docs/                               # Architecture documentation & master reports
+│   ├── architecture.md                # System architecture & developer workflows
 │   ├── master_report.md               # Master thesis report (Markdown)
-│   └── step_by_step_plan.md
+│   └── unity_vs_ros_guide.md          # Unity ML-Agents to ROS 2/Gazebo concept mapping
 ├── outputs/
 │   ├── experiments/                   # Checkpoints, logs, and training curves
 │   │   ├── sigreg_curriculum/         # Trained Teacher-Free LeWM Checkpoints
@@ -213,26 +249,28 @@ follow_robot/
 │   │   └── diffusion_curriculum/      # Trained AC-LDM 1D U-Net Diffusion
 │   └── reports/                       # Benchmark data, charts, and media
 │       └── media/                     # MP4 video, animated GIF, and keyframes
-├── paper/                             # Research paper draft and high-res figures
-│   ├── master_thesis_report.md        # Complete formal paper draft
-│   └── figures/                       # Presentation-ready figures and media
 ├── rl_ws/                             # Gymnasium environment & policy modules
-│   ├── envs/                          # FollowCurriculumEnv, BipedalTarget, Re-ID Tracker
+│   ├── common/                        # RobotConfig dataclass, device selection, unified agent wrappers
+│   ├── gym_ackbot/                    # AckBotFollow-v0 environment & AckBotRenderer
+│   ├── data/                          # Dataset loaders & noise augmentation
 │   └── policies/
-│       ├── ppo/                       # ActorCritic multi-modal networks
+│       ├── ppo/                       # ActorCritic multi-modal networks & GAE buffer
+│       ├── tracking/                  # Extended Kalman Filter target & multi-target Re-ID
 │       └── world_model/               # LeWM, SigReg, Sensor VAE, AC-LDM, CEM Planner
 ├── ros_ws/src/                        # Native ROS 2 Jazzy packages
-│   ├── ackbot_description/            # Ackermann URDF/Xacro models
+│   ├── ackbot_description/            # Ackermann URDF/Xacro models (calibrated 6.6 kg mass)
 │   ├── ackbot_gazebo/                 # Gazebo Harmonic worlds (follow_curriculum.sdf) & launch
-│   └── ackbot_policy/                 # wm_mpc_node (LeWM ROS 2 node)
-├── scripts/                           # Training, evaluation, and operational CLI scripts
-│   ├── generate_presentation_media.sh # Master recording pipeline
-│   ├── record_simulation_media.py     # Synchronized ROS 2 multi-view recorder
+│   └── ackbot_policy/                 # policy_node (PPO) & wm_mpc_node (LeWM CEM-MPC)
+├── scripts/                           # Consolidated CLI tools & modular subdirectories
+│   ├── benchmark.py                   # Unified benchmark suite (comparative, sim2real, mpc, occlusion)
+│   ├── train_world_model.py           # Unified world model trainer (lewm, vae, diffusion, reward)
+│   ├── harvest_data.py                # Curriculum transition data collector
+│   ├── view_gym_env.py                # Real-time 2D/3D policy visualizer
 │   ├── run_docker_simulation.sh       # Docker simulation launcher
-│   ├── evaluate_comparative.py        # 4-model comparative benchmark runner
-│   ├── evaluate_sim2real_robustness.py# 4-regime hardware disturbance suite
-│   └── view_gym_env.py                # Real-time 2D policy visualizer
-└── tests/                             # 47 automated unit and integration tests
+│   ├── generate_presentation_media.sh # Master recording pipeline
+│   ├── diagnostics/                   # Hardware, TF, LiDAR, target, and telemetry diagnostics
+│   └── sim/                           # Gazebo controllers, media recorder, and process cleanup
+└── tests/                             # 52 automated unit and integration tests
 ```
 
 ---
@@ -251,4 +289,4 @@ If you use AckBot in your research, please cite the technical report:
 }
 ```
 
-Full technical report available in [`paper/master_thesis_report.md`](paper/master_thesis_report.md) or [`docs/master_report.md`](docs/master_report.md).
+Full technical report available in [`docs/master_report.md`](file:///Users/hanriman/Documents/master/A2R/follow_robot/docs/master_report.md). System architecture and developer workflows available in [`docs/architecture.md`](file:///Users/hanriman/Documents/master/A2R/follow_robot/docs/architecture.md).
