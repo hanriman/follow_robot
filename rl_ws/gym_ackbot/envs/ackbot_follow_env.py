@@ -76,6 +76,9 @@ class AckBotFollowEnv(gym.Env):
         auto_curriculum: bool = False,
         num_distractors: int = 0,
         view_mode: str = "3d",
+        min_episodes_per_stage: int = 20,
+        stage_thresholds: dict[int, float] | None = None,
+        replay_previous_ratio: float = 0.30,
     ) -> None:
         super().__init__()
         self.render_mode = render_mode
@@ -88,7 +91,13 @@ class AckBotFollowEnv(gym.Env):
         self.auto_curriculum = bool(auto_curriculum)
         self.num_distractors = int(num_distractors)
         self.distractors: list[BipedalHumanTarget] = []
-        self.replay_previous_ratio = 0.30
+        self.min_episodes_per_stage = int(min_episodes_per_stage)
+        self.stage_thresholds = (
+            {int(k): float(v) for k, v in stage_thresholds.items()}
+            if stage_thresholds is not None
+            else {1: 380.0, 2: 320.0, 3: 300.0}
+        )
+        self.replay_previous_ratio = float(replay_previous_ratio)
         self.curriculum_history: list[float] = []
         self.episode_return = 0.0
         self.stage_graduated = False
@@ -162,6 +171,7 @@ class AckBotFollowEnv(gym.Env):
         self.scenario_state = "NORMAL"
         self.scenario_timer = 0
         self.prev_target_dist = 2.0
+        self.prev_angle_to_cam = 0.0
 
         self.current_step = 0
         self.last_action = np.zeros(2, dtype=np.float32)
@@ -191,6 +201,13 @@ class AckBotFollowEnv(gym.Env):
         self.lidar_samples = self.cfg.lidar_samples
 
         self.max_accel = 1.5  # m/s^2
+
+    def set_unlocked_stage(self, stage: int) -> None:
+        """Synchronize unlocked curriculum frontier across vectorized workers."""
+        new_unlocked = max(1, min(4, int(stage)))
+        if new_unlocked != self.unlocked_stage:
+            self.unlocked_stage = new_unlocked
+            self.curriculum_history.clear()
 
     def reset(self, seed: int | None = None, options: dict | None = None):
         super().reset(seed=seed)
@@ -335,6 +352,12 @@ class AckBotFollowEnv(gym.Env):
         self.prev_target_dist = math.hypot(
             self.target_x - self.robot_x, self.target_y - self.robot_y
         )
+        half_l = self.chassis_length / 2.0
+        cam_x = self.robot_x + half_l * math.cos(self.robot_yaw)
+        cam_y = self.robot_y + half_l * math.sin(self.robot_yaw)
+        init_angle = math.atan2(self.target_y - cam_y, self.target_x - cam_x) - self.robot_yaw
+        init_angle = (init_angle + np.pi) % (2.0 * np.pi) - np.pi
+        self.prev_angle_to_cam = abs(init_angle)
 
         # Spawn distractors if enabled
         self.distractors = []
@@ -511,26 +534,45 @@ class AckBotFollowEnv(gym.Env):
             and not assoc["selected_candidate"]["is_target"]
         )
 
-        # 7. Compute Reward with Stage-Specific Shaping
+        # 7. Compute Reward with Continuous 360° Bearing & Kinematic Recovery Shaping
         target_dist = math.hypot(self.target_x - self.robot_x, self.target_y - self.robot_y)
         dist_change = self.prev_target_dist - target_dist
         self.prev_target_dist = target_dist
 
+        abs_angle = abs(angle_to_cam)
+        angle_change = self.prev_angle_to_cam - abs_angle
+        self.prev_angle_to_cam = abs_angle
+
         reward_progress = 4.0 * dist_change
-        reward_dist = 1.0 - min(1.0, abs(target_dist - self.target_follow_distance) / 3.0)
+        raw_reward_dist = 1.0 - min(1.0, abs(target_dist - self.target_follow_distance) / 3.0)
 
         # Tailgating Slot Reward
         target_heading = math.atan2(self.target_vy, self.target_vx)
         slot_x = self.target_x - self.target_follow_distance * math.cos(target_heading)
         slot_y = self.target_y - self.target_follow_distance * math.sin(target_heading)
         dist_to_slot = math.hypot(self.robot_x - slot_x, self.robot_y - slot_y)
-        reward_slot = 1.0 - min(1.0, dist_to_slot / 3.0)
+        raw_reward_slot = 1.0 - min(1.0, dist_to_slot / 3.0)
 
-        # Visual Lock Reward
-        if in_fov:
-            reward_visual = 0.5 * math.cos(angle_to_cam)
+        # Gate distance/slot rewards strictly by camera alignment when LOS is unobstructed
+        # (exempt Stage 2 blind corner occlusion and Stage 3 WALK_BACK oncoming yield)
+        if is_los_blocked or (self.stage == 3 and self.scenario_state == "WALK_BACK"):
+            orient_gate = 1.0
         else:
-            reward_visual = -0.5
+            orient_gate = max(0.0, math.cos(angle_to_cam))
+
+        reward_dist = orient_gate * raw_reward_dist
+        reward_slot = orient_gate * raw_reward_slot
+
+        # Continuous Visual / Bearing Lock Reward across full [-pi, pi]
+        if in_fov:
+            reward_visual = 0.60 * math.cos(angle_to_cam)
+        elif is_los_blocked:
+            reward_visual = -0.10
+        else:
+            reward_visual = 0.45 * math.cos(angle_to_cam) - 0.15
+
+        # Potential-based angular tracking reward (rewards reducing |angle_to_cam|)
+        reward_turn = 1.5 * angle_change
 
         if target_dist > self.target_follow_distance and in_fov:
             reward_forward = (
@@ -539,7 +581,31 @@ class AckBotFollowEnv(gym.Env):
         else:
             reward_forward = 0.0
 
-        reward_heading = 0.3 * max(0.0, math.cos(self.robot_yaw - target_heading))
+        # Blend heading alignment from target bearing (far) to target velocity heading (in slot)
+        bearing_align = max(0.0, math.cos(angle_to_cam))
+        vel_align = max(0.0, math.cos(self.robot_yaw - target_heading))
+        slot_blend = max(0.0, min(1.0, (target_dist - 0.9) / 1.0))
+        reward_heading = 0.3 * (slot_blend * bearing_align + (1.0 - slot_blend) * vel_align)
+
+        # Ackermann kinematic recovery when target is out of FOV + close-range overshoot guard
+        reward_recovery = 0.0
+        if not in_fov and not is_los_blocked:
+            if yaw_rate * math.copysign(1.0, angle_to_cam) > 0.05:
+                reward_recovery += 0.20
+            if abs(self.robot_v) < 0.05 and abs_angle > 0.4:
+                reward_recovery -= 0.20
+            if self.robot_v > 0.45:
+                reward_recovery -= 0.30 * (
+                    (self.robot_v - 0.45) / max(1e-3, self.v_max - 0.45)
+                )
+        elif (
+            in_fov
+            and target_dist < 0.65
+            and not (self.stage == 3 and self.scenario_state == "WALK_BACK")
+        ):
+            if self.robot_v > 0.10:
+                reward_recovery -= 0.50 * (self.robot_v / self.v_max)
+
         action_diff = action - self.last_action
         reward_smooth = -0.05 * float(np.sum(action_diff**2))
         reward_collision = -25.0 if is_collision else 0.0
@@ -564,7 +630,9 @@ class AckBotFollowEnv(gym.Env):
             + reward_slot
             + reward_forward
             + reward_visual
+            + reward_turn
             + reward_heading
+            + reward_recovery
             + reward_smooth
             + reward_collision
             + reward_proximity
@@ -580,28 +648,25 @@ class AckBotFollowEnv(gym.Env):
         terminated = bool(is_collision)
         truncated = bool(self.current_step >= self.max_episode_steps)
 
-        # Automatic Curriculum Progression
+        # Automatic Curriculum Progression (frontier episodes only)
         self.stage_graduated = False
         if (terminated or truncated) and self.auto_curriculum:
-            self.curriculum_history.append(float(self.episode_return))
-            if len(self.curriculum_history) >= 20:
-                mean_ret = float(np.mean(self.curriculum_history[-20:]))
-                should_graduate = False
-                if (
-                    self.unlocked_stage == 1
-                    and mean_ret >= 380.0
-                    or self.unlocked_stage == 2
-                    and mean_ret >= 320.0
-                    or self.unlocked_stage == 3
-                    and mean_ret >= 300.0
-                ):
-                    should_graduate = True
-
-                if should_graduate and self.unlocked_stage < 4:
-                    self.unlocked_stage += 1
-                    self.stage = self.unlocked_stage
-                    self.stage_graduated = True
-                    self.curriculum_history.clear()
+            if self.stage == self.unlocked_stage:
+                self.curriculum_history.append(float(self.episode_return))
+                if len(self.curriculum_history) >= self.min_episodes_per_stage:
+                    mean_ret = float(
+                        np.mean(self.curriculum_history[-self.min_episodes_per_stage :])
+                    )
+                    threshold = self.stage_thresholds.get(self.unlocked_stage)
+                    if (
+                        threshold is not None
+                        and mean_ret >= threshold
+                        and self.unlocked_stage < 4
+                    ):
+                        self.unlocked_stage += 1
+                        self.stage = self.unlocked_stage
+                        self.stage_graduated = True
+                        self.curriculum_history.clear()
 
         info["unlocked_stage"] = self.unlocked_stage
         info["stage_graduated"] = self.stage_graduated
@@ -609,15 +674,29 @@ class AckBotFollowEnv(gym.Env):
 
         return obs, float(reward), terminated, truncated, info
 
+    def _steer_towards(self, person: BipedalHumanTarget, desired_yaw: float, max_turn: float = 0.08) -> None:
+        """Smoothly steer a walker toward desired_yaw without unphysical 1-frame snaps."""
+        yaw_err = (desired_yaw - person.yaw + math.pi) % (2.0 * math.pi) - math.pi
+        person.yaw = (
+            person.yaw + max(-max_turn, min(max_turn, yaw_err)) + math.pi
+        ) % (2.0 * math.pi) - math.pi
+        person.omega = 0.0
+
     def _update_target_motion(self):
         """Update target trajectory according to active curriculum scenario."""
         if self.stage == 1:
-            # Stage 1: Smooth wander with outer boundary bounce
+            # Stage 1: Smooth wander with bounded angular velocity & smooth boundary steering
             boundary = (self.arena_size / 2.0) - 0.8
             if abs(self.human.x) > boundary or abs(self.human.y) > boundary:
-                self.human.yaw = math.atan2(-self.human.y, -self.human.x)
+                self._steer_towards(self.human, math.atan2(-self.human.y, -self.human.x))
             else:
-                self.human.yaw += float(self.np_random.uniform(-0.06, 0.06))
+                self.human.omega = float(
+                    np.clip(
+                        0.85 * self.human.omega + self.np_random.uniform(-0.12, 0.12),
+                        -0.50,
+                        0.50,
+                    )
+                )
 
         elif self.stage == 2:
             # Stage 2: Hallway north -> L-corner turn around (0, 2) -> West traversal
@@ -664,18 +743,27 @@ class AckBotFollowEnv(gym.Env):
                     self.human.speed = 0.0  # Corridor exit reached
 
         else:
-            # Stage 4: Obstacle bounce and wander
+            # Stage 4: Smooth obstacle avoidance and bounded-omega wander
             boundary = (self.arena_size / 2.0) - 0.8
             if abs(self.human.x) > boundary or abs(self.human.y) > boundary:
-                self.human.yaw = math.atan2(-self.human.y, -self.human.x)
+                self._steer_towards(self.human, math.atan2(-self.human.y, -self.human.x))
             else:
+                avoiding = False
                 for ox, oy, obs_r in self.static_obstacles:
                     dx = self.human.x - ox
                     dy = self.human.y - oy
                     if math.hypot(dx, dy) < (obs_r + 0.35):
-                        self.human.yaw = math.atan2(dy, dx)
+                        self._steer_towards(self.human, math.atan2(dy, dx), max_turn=0.12)
+                        avoiding = True
                         break
-                self.human.yaw += float(self.np_random.uniform(-0.08, 0.08))
+                if not avoiding:
+                    self.human.omega = float(
+                        np.clip(
+                            0.85 * self.human.omega + self.np_random.uniform(-0.15, 0.15),
+                            -0.60,
+                            0.60,
+                        )
+                    )
 
         # Update distractors motion & periodic bipedal gait
         boundary = (self.arena_size / 2.0) - 0.8
@@ -763,53 +851,66 @@ class AckBotFollowEnv(gym.Env):
         r_min: float,
         r_max: float,
     ) -> np.ndarray:
-        """Cast 2D rays against arena boundaries, internal walls, circular obstacles, and humans."""
-        ranges = np.full(len(ray_angles), r_max, dtype=np.float32)
+        """Vectorized 2D ray casting against arena boundaries, internal walls, circular obstacles, and humans."""
+        global_angles = self.robot_yaw + ray_angles
+        cos_a = np.cos(global_angles)
+        sin_a = np.sin(global_angles)
+
+        r = np.full(len(ray_angles), float(r_max), dtype=np.float64)
         half_arena = self.arena_size / 2.0
 
-        for i, angle_offset in enumerate(ray_angles):
-            global_angle = self.robot_yaw + angle_offset
-            cos_a = math.cos(global_angle)
-            sin_a = math.sin(global_angle)
+        # 1. Outer boundary walls
+        pos_x = cos_a > 1e-4
+        neg_x = cos_a < -1e-4
+        if np.any(pos_x):
+            r[pos_x] = np.minimum(r[pos_x], (half_arena - origin_x) / cos_a[pos_x])
+        if np.any(neg_x):
+            r[neg_x] = np.minimum(r[neg_x], (-half_arena - origin_x) / cos_a[neg_x])
 
-            r = r_max
+        pos_y = sin_a > 1e-4
+        neg_y = sin_a < -1e-4
+        if np.any(pos_y):
+            r[pos_y] = np.minimum(r[pos_y], (half_arena - origin_y) / sin_a[pos_y])
+        if np.any(neg_y):
+            r[neg_y] = np.minimum(r[neg_y], (-half_arena - origin_y) / sin_a[neg_y])
 
-            # Outer boundary walls
-            if cos_a > 1e-4:
-                r = min(r, (half_arena - origin_x) / cos_a)
-            elif cos_a < -1e-4:
-                r = min(r, (-half_arena - origin_x) / cos_a)
+        # 2. Internal walls
+        for x1, y1, x2, y2 in self.internal_walls:
+            sx = x2 - x1
+            sy = y2 - y1
+            denom = cos_a * sy - sin_a * sx
+            valid = np.abs(denom) >= 1e-6
+            safe_denom = np.where(valid, denom, 1.0)
+            dx = x1 - origin_x
+            dy = y1 - origin_y
+            t = (dx * sy - dy * sx) / safe_denom
+            u = (dx * sin_a - dy * cos_a) / safe_denom
+            hit = valid & (t > 0.0) & (u >= 0.0) & (u <= 1.0)
+            if np.any(hit):
+                r[hit] = np.minimum(r[hit], t[hit])
 
-            if sin_a > 1e-4:
-                r = min(r, (half_arena - origin_y) / sin_a)
-            elif sin_a < -1e-4:
-                r = min(r, (-half_arena - origin_y) / sin_a)
+        # 3. Circular obstacles + Bipedal Human Walker Dual-Leg cylinders
+        circles: list[tuple[float, float, float]] = list(self.static_obstacles)
+        for person in [self.human] + self.distractors:
+            left_leg, right_leg = person.get_feet_positions()
+            circles.append((left_leg.x, left_leg.y, left_leg.radius))
+            circles.append((right_leg.x, right_leg.y, right_leg.radius))
 
-            # Internal walls
-            for x1, y1, x2, y2 in self.internal_walls:
-                d_wall = intersect_ray_segment(origin_x, origin_y, cos_a, sin_a, x1, y1, x2, y2)
-                r = min(r, d_wall)
+        if circles:
+            arr = np.asarray(circles, dtype=np.float64)  # (C, 3)
+            dx = arr[:, 0:1] - origin_x  # (C, 1)
+            dy = arr[:, 1:2] - origin_y  # (C, 1)
+            r_sq = (arr[:, 2:3]) ** 2  # (C, 1)
+            proj = dx * cos_a[None, :] + dy * sin_a[None, :]  # (C, N)
+            perp_sq = (dx * dx + dy * dy) - (proj * proj)
+            hit = (proj > 0.0) & (perp_sq < r_sq)
+            if np.any(hit):
+                sqrt_term = np.sqrt(np.maximum(0.0, r_sq - perp_sq))
+                dist_hit = np.where(hit, proj - sqrt_term, float(r_max))
+                dist_hit = np.where(dist_hit > 0.0, dist_hit, float(r_max))
+                r = np.minimum(r, np.min(dist_hit, axis=0))
 
-            # Circular obstacles
-            for ox, oy, obs_r in self.static_obstacles:
-                dx = ox - origin_x
-                dy = oy - origin_y
-                proj = dx * cos_a + dy * sin_a
-                if proj > 0:
-                    perp_sq = (dx * dx + dy * dy) - (proj * proj)
-                    if perp_sq < obs_r * obs_r:
-                        dist_hit = proj - math.sqrt(max(0.0, obs_r * obs_r - perp_sq))
-                        if dist_hit > 0:
-                            r = min(r, dist_hit)
-
-            # Bipedal Human Walker Dual-Leg Intersections (Target + Distractors)
-            for person in [self.human] + self.distractors:
-                hit_p = person.ray_intersection(origin_x, origin_y, cos_a, sin_a, r_max)
-                r = min(r, hit_p)
-
-            ranges[i] = np.clip(r, r_min, r_max)
-
-        return ranges
+        return np.clip(r, r_min, r_max).astype(np.float32)
 
     def _simulate_lidar(self) -> np.ndarray:
         cos_y = math.cos(self.robot_yaw)

@@ -26,6 +26,7 @@ import torch
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+import rl_ws.gym_ackbot.envs  # noqa: F401 (registers AckBotFollow-v0)
 from rl_ws.policies.ppo.actor_critic import ActorCritic
 from rl_ws.policies.vla.diffusion_wm import ActionConditionedDiffusionWorldModel
 from rl_ws.policies.world_model.cem_planner import CEMPlanner
@@ -144,13 +145,21 @@ def main():
             ckpt = torch.load(ckpt_p, map_location=device, weights_only=False)
             ppo.load_state_dict(ckpt["model_state_dict"])
             ppo.eval()
+            ppo_state = {"hx": ppo.init_hidden(1, device=device)}
+
+            def ppo_reset():
+                ppo_state["hx"] = ppo.init_hidden(1, device=device)
 
             def ppo_act(obs):
                 with torch.no_grad():
                     obs_t = torch.as_tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
-                    return ppo.get_deterministic_action(obs_t).squeeze(0).cpu().numpy()
+                    act_t, ppo_state["hx"] = ppo.get_deterministic_action(
+                        obs_t, hx=ppo_state["hx"], return_hidden=True
+                    )
+                    return act_t.squeeze(0).cpu().numpy()
 
             policy_fn = ppo_act
+            reset_fn = ppo_reset
         else:
             print(f"[!] Warning: PPO checkpoint not found at {ckpt_p}. Using heuristic controller.")
             args.policy = "heuristic"

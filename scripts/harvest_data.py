@@ -179,6 +179,7 @@ def main():
 
     # Load PPO model if available
     ppo_model = None
+    ppo_hx = None
     ppo_path = Path(args.ppo_checkpoint)
     if ppo_path.exists():
         print(f"Loading PPO Policy : {ppo_path.name}")
@@ -186,6 +187,7 @@ def main():
         ppo_model = ActorCritic(obs_dim=426, act_dim=2).to(device)
         ppo_model.load_state_dict(checkpoint["model_state_dict"])
         ppo_model.eval()
+        ppo_hx = ppo_model.init_hidden(1, device=device)
     else:
         print(f"Warning: PPO checkpoint not found at {ppo_path}. Using pure heuristic pursuit!")
 
@@ -243,7 +245,10 @@ def main():
             # Mode 1: PPO with Gaussian exploration noise
             with torch.no_grad():
                 obs_t = torch.as_tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
-                base_act = ppo_model.get_deterministic_action(obs_t).squeeze(0).cpu().numpy()
+                act_t, ppo_hx = ppo_model.get_deterministic_action(
+                    obs_t, hx=ppo_hx, return_hidden=True
+                )
+                base_act = act_t.squeeze(0).cpu().numpy()
             noise = np.random.normal(0.0, args.noise_std, size=base_act.shape)
             action = base_act + noise
         elif mode_roll < 0.90 or ppo_model is None:
@@ -317,6 +322,8 @@ def main():
 
         if done:
             episode_step = 0
+            if ppo_model is not None:
+                ppo_hx = ppo_model.init_hidden(1, device=device)
             current_stage = choose_stage()
             current_distractors = args.distractors if current_stage == 4 else 0
             obs, _ = env.reset(

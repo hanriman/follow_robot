@@ -1,31 +1,34 @@
-# PPO Hyperparameters for AckBot Target Following
+# PPO Hyperparameters for AckBot Target Following (Recurrent Spatial PPO)
 algorithm:
-  total_timesteps: 400000       # Total environment steps across curriculum (~20-25 mins on M4 Pro)
-  n_steps: 2048                 # Horizon length per rollout iteration
-  batch_size: 64                # Minibatch size
-  n_epochs: 10                  # PPO update epochs per iteration
+  total_timesteps: 600000       # Total environment steps across curriculum
+  num_envs: 8                   # Parallel environments per rollout
+  n_steps: 512                  # Rollout horizon per env (8 * 512 = 4096 transitions/iter)
+  seq_len: 32                   # Sequence chunk length for recurrent GRU BPTT
+  num_mini_batches: 8           # Minibatches per epoch (512 transitions/minibatch)
+  batch_size: 128               # Fallback flat minibatch size (single-env / tests)
+  n_epochs: 6                   # PPO update epochs per iteration
   learning_rate: 0.0003         # Adam optimizer learning rate
   gamma: 0.99                   # Discount factor
   gae_lambda: 0.95              # GAE factor
   clip_range: 0.2               # PPO surrogate clip epsilon
-  clip_range_vf: 0.2            # Value function clip epsilon
-  ent_coef: 0.01                # Entropy bonus coefficient (encourages exploration)
-  vf_coef: 0.5                  # Value function loss coefficient
+  clip_range_vf: 5.0            # Value function clip epsilon
+  ent_coef: 0.001               # Entropy bonus coefficient (prevents logstd inflation)
+  vf_coef: 0.05                 # Balanced against O(100) squared return scale
   max_grad_norm: 0.5            # Gradient clipping norm
   target_kl: 0.03               # Target KL divergence threshold for early stopping
 
 curriculum:
   enabled: true
-  min_episodes_per_stage: 20
+  min_episodes_per_stage: 40
   stage_thresholds:
-    1: { min_return: 380.0 }
-    2: { min_return: 320.0 }
-    3: { min_return: 300.0 }
+    1: { min_return: 850.0 }
+    2: { min_return: 700.0 }
+    3: { min_return: 600.0 }
   replay_previous_ratio: 0.30
 
 evaluation:
-  eval_freq: 20000              # Evaluate every 20k steps
+  eval_freq: 24576              # Evaluate every ~24.5k steps (every 6 iterations)
   n_eval_episodes: 3            # Number of deterministic test episodes per stage (12 total)
   save_best_only: false
 
-device: "auto"                  # auto, mps, cpu
+device: "auto"                  # auto, mps, cpu, cuda

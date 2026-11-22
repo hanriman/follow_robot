@@ -55,6 +55,7 @@ class AckBotPolicyNode(Node):
         # Initialize Neural Network
         self.device = torch.device("cpu")
         self.model = ActorCritic(obs_dim=426, act_dim=2, cam_dim=64, lidar_dim=360).to(self.device)
+        self.hx = self.model.init_hidden(1, device=self.device)
 
         if ckpt_path.exists():
             checkpoint = torch.load(ckpt_path, map_location=self.device, weights_only=False)
@@ -135,7 +136,10 @@ class AckBotPolicyNode(Node):
         obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
 
         with torch.no_grad():
-            action = self.model.get_deterministic_action(obs_t).squeeze(0).cpu().numpy()
+            action_t, self.hx = self.model.get_deterministic_action(
+                obs_t, hx=self.hx, return_hidden=True
+            )
+            action = action_t.squeeze(0).cpu().numpy()
 
         target_v = float(action[0])
         target_steer = float(action[1])

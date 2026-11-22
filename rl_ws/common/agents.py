@@ -110,7 +110,7 @@ class HeuristicPursuitAgent(BaseAgent):
 
 
 class PPOAgent(BaseAgent):
-    """PPO Reactive Neural Policy Agent."""
+    """Recurrent PPO Neural Policy Agent."""
 
     def __init__(
         self,
@@ -125,17 +125,22 @@ class PPOAgent(BaseAgent):
         ckpt = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         self.model.load_state_dict(ckpt["model_state_dict"])
         self.model.eval()
+        self.hx = self.model.init_hidden(1, device=self.device)
 
     def reset(self) -> None:
-        pass
+        self.hx = self.model.init_hidden(1, device=self.device)
 
     def act(self, obs: np.ndarray, info: dict[str, Any] | None = None) -> np.ndarray:
         with torch.no_grad():
             obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
             if self.deterministic:
-                action = self.model.get_deterministic_action(obs_t)
+                action, self.hx = self.model.get_deterministic_action(
+                    obs_t, hx=self.hx, return_hidden=True
+                )
             else:
-                action, _, _, _ = self.model.get_action_and_value(obs_t)
+                action, _, _, _, self.hx = self.model.get_action_and_value(
+                    obs_t, hx=self.hx, return_hidden=True
+                )
             return action.squeeze(0).cpu().numpy()
 
 

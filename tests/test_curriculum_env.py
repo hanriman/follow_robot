@@ -405,3 +405,77 @@ def test_replay_stage_sampling():
     # No stages beyond unlocked
     assert max(sampled_stages) <= 3
     env.close()
+
+
+def test_vectorized_raycast_accuracy_matches_analytical():
+    """Verify NumPy-vectorized _cast_rays matches analytical arena wall and human distances."""
+    env = AckBotFollowEnv(stage=1)
+    env.reset(seed=42)
+    env.robot_x = 0.0
+    env.robot_y = 0.0
+    env.robot_yaw = 0.0
+    # Place human directly ahead at x=2.0, y=0.0 with zero stride/stance
+    env.human.x = 2.0
+    env.human.y = 0.0
+    env.human.yaw = 0.0
+    env.human.stride_length = 0.0
+    env.human.stance_width = 0.0
+    env.human.leg_radius = 0.10
+
+    cam_ranges = env._simulate_camera_depth()
+    # Center rays (index 31/32) look straight +X from cam_x = 0.15 -> hit at 2.0 - 0.15 - 0.10 = 1.75m
+    center_min = float(np.min(cam_ranges[30:34]))
+    assert math.isclose(center_min, 1.75, abs_tol=0.08)
+
+    # LiDAR ray 180 (facing -X from lidar_x = -0.15) hits arena wall at x=-5.0 -> dist 4.85 clipped to 3.0m
+    lidar_ranges = env._simulate_lidar()
+    assert math.isclose(float(lidar_ranges[180]), env.lidar_range_max, abs_tol=1e-4)
+    env.close()
+
+
+def test_out_of_fov_continuous_bearing_reward_gradient():
+    """Verify out-of-FOV reward gives strictly stronger signal when closer to facing the target."""
+    env = AckBotFollowEnv(stage=1)
+    env.reset(seed=42)
+
+    def eval_at_angle(angle_rad: float) -> float:
+        env.robot_x = 0.0
+        env.robot_y = 0.0
+        env.robot_yaw = 0.0
+        env.robot_v = 0.0
+        env.robot_steer = 0.0
+        env.last_action = np.zeros(2, dtype=np.float32)
+        env.human.x = 0.15 + 2.0 * math.cos(angle_rad)
+        env.human.y = 2.0 * math.sin(angle_rad)
+        env.human.speed = 0.0
+        env.human.vx = 0.0
+        env.human.vy = 0.0
+        env.target_x = env.human.x
+        env.target_y = env.human.y
+        env.prev_target_dist = math.hypot(env.target_x, env.target_y)
+        env.prev_angle_to_cam = abs(angle_rad)
+        _, rew, _, _, info = env.step(np.array([0.0, 0.0], dtype=np.float32))
+        assert info["target_in_fov"] is False
+        return rew
+
+    rew_60deg = eval_at_angle(math.radians(60.0))
+    rew_150deg = eval_at_angle(math.radians(150.0))
+    assert rew_60deg > rew_150deg + 0.3
+    env.close()
+
+
+def test_frontier_only_curriculum_graduation():
+    """Verify replayed Stage 1 episodes do not count toward Stage 2 graduation history."""
+    env = AckBotFollowEnv(auto_curriculum=True, stage=1, max_episode_steps=5)
+    env.reset(seed=42)
+    env.set_unlocked_stage(2)
+    env.stage = 1  # Simulate a replayed Stage 1 episode while frontier is Stage 2
+    env.episode_return = 500.0
+    env.current_step = env.max_episode_steps - 1
+
+    _, _, _, truncated, info = env.step(np.array([0.1, 0.0], dtype=np.float32))
+    assert truncated is True
+    assert info["stage_graduated"] is False
+    assert env.unlocked_stage == 2
+    assert len(env.curriculum_history) == 0
+    env.close()
