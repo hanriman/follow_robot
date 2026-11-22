@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Tests](https://img.shields.io/badge/Tests-52%20Passed-success?style=flat-square&logo=pytest)](file:///Users/hanriman/Documents/master/A2R/follow_robot/tests)
+[![Tests](https://img.shields.io/badge/Tests-58%20Passed-success?style=flat-square&logo=pytest)](tests)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20ARM64%20%7C%20Ubuntu%2024.04%20ARM64-blue?style=flat-square&logo=apple)](file:///Users/hanriman/Documents/master/A2R/follow_robot/docker)
 [![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy%20Jalisco-orange?style=flat-square&logo=ros)](file:///Users/hanriman/Documents/master/A2R/follow_robot/ros_ws)
 [![Gazebo](https://img.shields.io/badge/Gazebo-Harmonic%208.8.0-red?style=flat-square&logo=gazebo)](file:///Users/hanriman/Documents/master/A2R/follow_robot/ros_ws/src/ackbot_gazebo)
@@ -122,8 +122,20 @@ cd follow_robot
 # Install dependencies into isolated .venv (Python 3.12)
 uv sync
 
-# Run complete test suite (52 unit & integration tests)
-uv run pytest tests/ -v
+# Run complete test suite (58 unit & integration tests)
+uv run --extra dev pytest tests/ -v
+```
+
+### 1b. Recurrent Spatial PPO Training & Hugging Face Checkpoints
+
+See [`docs/ppo_recurrent_upgrade.md`](docs/ppo_recurrent_upgrade.md) for the full Recurrent CoordConv + GRU + `TanhNormal` PPO design and benchmark results:
+
+```bash
+# Train vectorized Recurrent PPO across 8 parallel environments
+uv run python rl_ws/train.py --exp-name recurrent_ppo_full
+
+# Or download pre-trained checkpoints from Hugging Face (private repo: Hanifanrn/ackbot-follow-ppo)
+uv run --with huggingface_hub hf download Hanifanrn/ackbot-follow-ppo --local-dir outputs/experiments
 ```
 
 ### 2. Interactive 2D Visualizer
@@ -240,6 +252,7 @@ follow_robot/
 ├── docs/                               # Architecture documentation & master reports
 │   ├── architecture.md                # System architecture & developer workflows
 │   ├── master_report.md               # Master thesis report (Markdown)
+│   ├── ppo_recurrent_upgrade.md       # Recurrent CoordConv + GRU PPO upgrade & training results
 │   └── unity_vs_ros_guide.md          # Unity ML-Agents to ROS 2/Gazebo concept mapping
 ├── outputs/
 │   ├── experiments/                   # Checkpoints, logs, and training curves
@@ -270,7 +283,7 @@ follow_robot/
 │   ├── generate_presentation_media.sh # Master recording pipeline
 │   ├── diagnostics/                   # Hardware, TF, LiDAR, target, and telemetry diagnostics
 │   └── sim/                           # Gazebo controllers, media recorder, and process cleanup
-└── tests/                             # 52 automated unit and integration tests
+└── tests/                             # 58 automated unit and integration tests
 ```
 
 ---

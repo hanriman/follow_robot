@@ -60,17 +60,25 @@ This document summarizes the diagnosis, architectural fixes, reward/curriculum i
 
 ## 4. Running Locally on macOS (Apple Silicon)
 
-Because `outputs/experiments/*` is gitignored, either copy the trained `.pt` checkpoints via `scp` or train natively on Apple Silicon MPS:
+Trained checkpoints and logs (`exp_20261122_210124_recurrent_ppo_v3` and `exp_20261122_222257_recurrent_ppo_s3_s4`) are hosted in the private Hugging Face model repository [`Hanifanrn/ackbot-follow-ppo`](https://huggingface.co/Hanifanrn/ackbot-follow-ppo) since `outputs/experiments/*` is gitignored:
 
 ```bash
 # 1. Pull latest code & sync environment
 git pull origin main
 uv sync --extra dev
 
-# 2. Verify tests
+# 2. Verify tests (58 passed)
 uv run --extra dev pytest tests/ -v
 
-# 3. View a checkpoint (after copying .pt from VM) or train on MPS
-uv run python scripts/view_gym_env.py --policy model --stage 1 --checkpoint <path/to/model.pt>
+# 3. Download trained checkpoints & logs from Hugging Face (requires `hf auth login`)
+uv run --with huggingface_hub hf download Hanifanrn/ackbot-follow-ppo --local-dir outputs/experiments
+
+# 4. Visualize Stage 1-2 tracker or full-curriculum Stage 1-4 checkpoint
+uv run python scripts/view_gym_env.py --policy model --stage 1 \
+  --checkpoint outputs/experiments/exp_20261122_210124_recurrent_ppo_v3/checkpoints/latest_model.pt
+uv run python scripts/view_gym_env.py --policy model --stage 3 \
+  --checkpoint outputs/experiments/exp_20261122_222257_recurrent_ppo_s3_s4/checkpoints/best_model.pt
+
+# 5. Or train natively on Apple Silicon MPS
 uv run python rl_ws/train.py --device mps --exp-name mac_recurrent_ppo
 ```
