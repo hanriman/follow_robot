@@ -26,6 +26,14 @@ ros_ws/log/
 data/*
 outputs/experiments/*
 outputs/reports/*
+reference/world-model/data/*
+reference/world-model/outputs/*
+*.pt
+*.pth
+*.ckpt
+*.npz
+*.npy
+events.out.tfevents.*
 
 # Temporary / Scratch
 scratch/*

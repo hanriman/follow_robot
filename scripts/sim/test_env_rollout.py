@@ -10,6 +10,8 @@ import time
 import gymnasium as gym
 import numpy as np
 
+import rl_ws.gym_ackbot.envs  # noqa: F401 (registers AckBotFollow-v0)
+
 
 def main():
     print("=" * 68)

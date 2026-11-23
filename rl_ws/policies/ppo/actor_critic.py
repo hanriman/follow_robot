@@ -23,6 +23,30 @@ def layer_init(layer, std=math.sqrt(2), bias_const=0.0):
     return layer
 
 
+class _MPSAdaptiveAvgPool1d(nn.Module):
+    """AdaptiveAvgPool1d compatible with Apple Silicon MPS for non-divisible lengths."""
+
+    def __init__(self, output_size: int):
+        super().__init__()
+        self.output_size = int(output_size)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        length = x.shape[-1]
+        out = self.output_size
+        if x.device.type != "mps" or length % out == 0:
+            return nn.functional.adaptive_avg_pool1d(x, out)
+        # Match PyTorch adaptive_avg_pool1d bin boundaries without hitting MPS divisibility error
+        return torch.cat(
+            [
+                x[..., (i * length) // out : ((i + 1) * length + out - 1) // out].mean(
+                    dim=-1, keepdim=True
+                )
+                for i in range(out)
+            ],
+            dim=-1,
+        )
+
+
 class ActorCritic(nn.Module):
     def __init__(
         self,
@@ -67,7 +91,7 @@ class ActorCritic(nn.Module):
             nn.SiLU(),
             layer_init(nn.Conv1d(16, 32, kernel_size=3, stride=2, padding=1)),
             nn.SiLU(),
-            nn.AdaptiveAvgPool1d(4),
+            _MPSAdaptiveAvgPool1d(4),
         )
         self.cam_proj = nn.Sequential(
             layer_init(nn.Linear(32 * 4 + 6, 64)),
@@ -89,7 +113,7 @@ class ActorCritic(nn.Module):
                 )
             ),
             nn.SiLU(),
-            nn.AdaptiveAvgPool1d(6),
+            _MPSAdaptiveAvgPool1d(6),
         )
         self.lidar_proj = nn.Sequential(
             layer_init(nn.Linear(32 * 6 + 11, 64)),
